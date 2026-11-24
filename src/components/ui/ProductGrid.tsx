@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ProductCard } from "@/components/ui/ProductCard";
-import type { ProductWithRelations } from "@/lib/data";
+import { Product } from "@/types";
 
 const sortOptions = [
   { value: "default", label: "Popular " },
@@ -11,27 +11,11 @@ const sortOptions = [
   { value: "price-desc", label: "Price: High to Low" },
 ];
 
-export function ProductGrid({ products }: { products: ProductWithRelations[] }) {
+export function ProductGrid({ products }: { products: Product[] }) {
   const [sortOption, setSortOption] = useState("default");
 
-  // Map DB products to the shape ProductCard expects
-  const mappedProducts = useMemo(() => {
-    return products.map((p) => ({
-      id: p.id,
-      title: p.title,
-      price: p.price,
-      description: p.description,
-      category: p.category.name,
-      image: p.image ?? undefined,
-      rating: {
-        rate: p.ratingRate ?? 0,
-        count: p.ratingCount ?? 0,
-      },
-    }));
-  }, [products]);
-
   const sortedProducts = useMemo(() => {
-    const items = [...mappedProducts];
+    const items = [...products];
 
     switch (sortOption) {
       case "name-asc":
@@ -43,7 +27,7 @@ export function ProductGrid({ products }: { products: ProductWithRelations[] }) 
       default:
         return items;
     }
-  }, [sortOption, mappedProducts]);
+  }, [sortOption, products]);
 
   return (
     <>

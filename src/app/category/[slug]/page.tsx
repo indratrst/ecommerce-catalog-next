@@ -1,29 +1,18 @@
-import { getProducts } from "@/lib/data";
+import { Suspense } from "react";
+import { categoryApi } from "@/lib/api";
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
-import { dehydrate, HydrationBoundary, QueryClient } from "@tanstack/react-query";
 import { ProductListClient } from "@/components/products/ProductListClient";
 
 export default async function CategoryPage({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = await params;
   const { slug } = resolvedParams;
 
-  // Find the category by slug
-  const category = await prisma.category.findUnique({
-    where: { slug },
-  });
+  const categories = await categoryApi.getAll();
+  const category = categories.find((item) => item.slug === slug);
 
   if (!category) {
     notFound();
   }
-
-  const queryClient = new QueryClient();
-
-  // Prefetch category specific products
-  await queryClient.prefetchQuery({
-    queryKey: ["products", { category: slug }],
-    queryFn: () => getProducts(slug),
-  });
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-10 min-h-screen">
@@ -40,9 +29,9 @@ export default async function CategoryPage({ params }: { params: Promise<{ slug:
         ></div>
       </div>
 
-      <HydrationBoundary state={dehydrate(queryClient)}>
+      <Suspense fallback={<div className="py-20 text-center">Loading products...</div>}>
         <ProductListClient categorySlug={slug} />
-      </HydrationBoundary>
+      </Suspense>
     </div>
   );
 }

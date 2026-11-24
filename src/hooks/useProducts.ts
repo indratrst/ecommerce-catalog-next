@@ -1,24 +1,41 @@
 import { useQuery } from "@tanstack/react-query";
-import { ProductWithRelations } from "@/lib/data";
+import { categoryApi, productApi } from "@/lib/api";
+import { Product } from "@/types";
+
+async function getAllProducts(search?: string, categorySlug?: string): Promise<Product[]> {
+  let categoryId: string | undefined;
+  if (categorySlug) {
+    const categories = await categoryApi.getAll();
+    categoryId = categories.find((category) => category.slug === categorySlug)?.id?.toString();
+    if (!categoryId) return [];
+  }
+
+  const firstPage = await productApi.getAll({
+    page: 1,
+    limit: 100,
+    search,
+    categoryId,
+  });
+  if (firstPage.totalPages <= 1) return firstPage.data;
+
+  const remainingPages = await Promise.all(
+    Array.from({ length: firstPage.totalPages - 1 }, (_, index) =>
+      productApi.getAll({
+        page: index + 2,
+        limit: firstPage.limit,
+        search,
+        categoryId,
+      })
+    )
+  );
+  return [...firstPage.data, ...remainingPages.flatMap((page) => page.data)];
+}
 
 export function useProducts(categorySlug?: string, search?: string) {
-  return useQuery<ProductWithRelations[]>({
+  return useQuery<Product[]>({
     queryKey: ["products", { category: categorySlug, search }],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (categorySlug) params.append("category", categorySlug);
-      if (search) params.append("search", search);
-      
-      const queryString = params.toString();
-      const url = queryString ? `/api/products?${queryString}` : "/api/products";
-      
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error("Network response was not ok");
-      }
-      return response.json();
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 30 * 60 * 1000, // 30 minutes
+    queryFn: () => getAllProducts(search, categorySlug),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
   });
 }

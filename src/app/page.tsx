@@ -1,39 +1,9 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-// import { getProducts } from "@/lib/data";
-import { dehydrate, HydrationBoundary, QueryClient } from "@tanstack/react-query";
 import { ProductListClient } from "@/components/products/ProductListClient";
+import { HomeCategories } from "@/components/home/HomeCategories";
 
-const categories = [
-  {
-    title: "Clothing",
-    image:
-      "https://images.unsplash.com/photo-1516826957135-700ede19c6ce?q=80&w=800&auto=format&fit=crop",
-    link: "/category/clothing",
-  },
-  {
-    title: "Bags",
-    image:
-      "https://images.unsplash.com/photo-1548036328-c9fa89d128fa?q=80&w=800&auto=format&fit=crop",
-    link: "/category/bags",
-  },
-  {
-    title: "Accessories",
-    image:
-      "https://images.unsplash.com/photo-1523206489230-c012c64b2b48?q=80&w=800&auto=format&fit=crop",
-    link: "/category/accessories",
-  },
-];
-
-export default async function Home() {
-  const queryClient = new QueryClient();
-
-  // Prefetch products data
-  await queryClient.prefetchQuery({
-    queryKey: ["products", { category: undefined }],
-    queryFn: () => getProducts(),
-  });
-
+export default function Home() {
   return (
     <div className="flex flex-col min-h-screen">
       {/* HERO SECTION */}
@@ -95,28 +65,7 @@ export default async function Home() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
-            {categories.map((category) => (
-              <Link
-                key={category.title}
-                href={category.link}
-                className="group relative h-100 overflow-hidden flex items-center justify-center"
-              >
-                <div
-                  className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110"
-                  style={{ backgroundImage: `url('${category.image}')` }}
-                >
-                  <div className="absolute inset-0 bg-black/40 transition-opacity duration-300 group-hover:bg-black/50" />
-                </div>
-                <div className="relative z-10 text-center">
-                  <h3 className="text-3xl font-bold text-white uppercase tracking-wider mb-2">
-                    {category.title}
-                  </h3>
-                  <span className="inline-block border-b-2 border-white text-white font-medium pb-1 opacity-0 transform translate-y-4 transition-all duration-300 group-hover:opacity-100 group-hover:translate-y-0">
-                    Explore
-                  </span>
-                </div>
-              </Link>
-            ))}
+            <HomeCategories />
           </div>
         </div>
       </section>
@@ -141,20 +90,19 @@ export default async function Home() {
             ></div>
           </div>
 
-          <HydrationBoundary state={dehydrate(queryClient)}>
-            <ProductListClient />
-          </HydrationBoundary>
+          <ProductListClient />
 
           <div className="mt-16 flex justify-center">
-            <button
+            <Link
+              href="/products"
               className="border-2 px-10 py-3 font-bold uppercase tracking-widest transition-colors duration-300 hover:opacity-70"
               style={{
                 borderColor: "var(--foreground)",
                 color: "var(--foreground)",
               }}
             >
-              Load More
-            </button>
+              View All Products
+            </Link>
           </div>
         </div>
       </section>

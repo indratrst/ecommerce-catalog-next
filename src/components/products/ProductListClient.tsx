@@ -2,11 +2,11 @@
 
 import { useProducts } from "@/hooks/useProducts";
 import { ProductGrid } from "@/components/ui/ProductGrid";
-import { ProductWithRelations } from "@/lib/data";
 import { useSearchParams } from "next/navigation";
+import { Product } from "@/types";
 
 interface ProductListClientProps {
-  initialData?: ProductWithRelations[];
+  initialData?: Product[];
   categorySlug?: string;
   initialCategory?: string;
   initialSearch?: string;
@@ -24,7 +24,7 @@ export function ProductListClient({
   const activeCategory = searchParams.get("category") || categorySlug || initialCategory;
   const activeSearch = searchParams.get("search") || initialSearch;
 
-  const { data: products, isLoading, isError } = useProducts(
+  const { data: products, isLoading, isError, error } = useProducts(
     activeCategory || undefined, 
     activeSearch || undefined
   );
@@ -43,7 +43,9 @@ export function ProductListClient({
   if (isError && !displayProducts) {
     return (
       <div className="text-center py-20 text-red-500">
-        <p>Failed to load products. Please try again later.</p>
+        <p role="alert">
+          {error instanceof Error ? error.message : "Failed to load products. Please try again later."}
+        </p>
       </div>
     );
   }
@@ -52,11 +54,10 @@ export function ProductListClient({
     return (
       <div className="text-center py-20 text-muted-foreground flex flex-col items-center">
         <p className="text-xl font-medium mb-2">No products found.</p>
-        <p>Try adjusting your search or filters to find what you're looking for.</p>
+        <p>Try adjusting your search or filters to find what you&apos;re looking for.</p>
       </div>
     );
   }
 
   return <ProductGrid products={displayProducts} />;
 }
-

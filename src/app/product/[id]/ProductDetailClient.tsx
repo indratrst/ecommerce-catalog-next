@@ -67,7 +67,7 @@ export default function ProductDetailClient({
         <div className="w-full md:w-1/2 flex flex-col justify-center">
           <div className="mb-2">
             <span className="text-xs font-bold tracking-widest uppercase" style={{ color: "var(--muted)" }}>
-              {product.category}
+              {product.category?.name ?? "Uncategorized"}
             </span>
           </div>
 

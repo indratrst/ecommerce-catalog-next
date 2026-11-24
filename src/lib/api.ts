@@ -165,10 +165,17 @@ export const productApi = {
       schema: ProductSchema,
     });
   },
-  getAll: (params?: { page?: number; limit?: number }) => {
+  getAll: (params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    categoryId?: string;
+  }) => {
     const query = new URLSearchParams();
     if (params?.page) query.set("page", String(params.page));
     if (params?.limit) query.set("limit", String(params.limit));
+    if (params?.search) query.set("search", params.search);
+    if (params?.categoryId) query.set("categoryId", params.categoryId);
     const qs = query.toString() ? `?${query.toString()}` : "";
 
     return apiFetch<PaginatedProducts>(`/products${qs}`, {
