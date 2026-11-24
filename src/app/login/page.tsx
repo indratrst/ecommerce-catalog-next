@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Lock, Mail, Loader2, AlertCircle } from "lucide-react";
+import { ZodError } from "zod";
+import { authApi, ApiError } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,22 +19,20 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to login");
-      }
+      await authApi.login({ email, password });
 
       router.push("/admin");
       router.refresh();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      if (err instanceof ZodError) {
+        setError(err.issues[0]?.message || "Data login tidak valid");
+      } else if (err instanceof ApiError) {
+        setError(err.message);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Gagal terhubung ke server");
+      }
     } finally {
       setLoading(false);
     }
@@ -134,9 +134,10 @@ export default function LoginPage() {
             </p>
           </div>
         </div>
-        
+
         <div className="mt-8 text-center">
-          <button 
+          <button
+            type="button"
             onClick={() => router.push("/")}
             className="text-slate-500 hover:text-slate-300 text-sm font-medium transition-colors"
           >

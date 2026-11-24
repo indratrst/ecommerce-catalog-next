@@ -74,11 +74,9 @@ export const CategorySchema = z.object({
 export const ProductVariantSchema = z.object({
   id: z.string(),
   productId: z.string().optional(),
-  name: z.string(),
-  sku: z.string().optional().nullable(),
-  price: z.number(),
+  size: z.string().optional().nullable(),
   stock: z.number().int().nonnegative(),
-  weight: z.number().optional().nullable(),
+  color: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
@@ -86,16 +84,26 @@ export const ProductVariantSchema = z.object({
 
 export const ProductSchema = z.object({
   id: z.string(),
-  name: z.string(), // Di Go Fiber pakai 'name' (sebelumnya 'title')
-  slug: z.string(),
-  description: z.string().optional().nullable(),
-  category: z.string().optional().nullable(),
-  imageUrl: z.string().optional().nullable(),
-  images: z.array(z.string()).optional(),
-  isActive: z.boolean().default(true),
+  categoryId: z.string(),
+  title: z.string(),
+  price: z.number().int(),
+  originalPrice: z.number().int().nullable().optional(),
+  description: z.string(),
+  image: z.string().nullable().optional(),
+  ratingRate: z.number().default(0),
+  ratingCount: z.number().int().default(0),
+  category: CategorySchema.nullable().optional(),
   variants: z.array(ProductVariantSchema).default([]),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
+});
+
+export const PaginatedProductsSchema = z.object({
+  data: z.array(ProductSchema),
+  totalData: z.number(),
+  totalPages: z.number(),
+  currentPage: z.number(),
+  limit: z.number(),
 });
 
 // ==========================================
@@ -128,7 +136,6 @@ export const CreateOrderPayloadSchema = z.object({
     )
     .min(1, "Keranjang tidak boleh kosong"),
 });
-
 export const OrderItemSchema = z.object({
   id: z.string(),
   orderId: z.string(),
@@ -164,6 +171,28 @@ export const OrderSchema = z.object({
 // Inferred TypeScript Types
 // ==========================================
 
+export const LoginPayloadSchema = z.object({
+  email: z.string().email("Format email tidak valid"),
+  password: z.string().min(1, "Password wajib diisi"),
+});
+
+export const CreateProductVariantPayloadSchema = z.object({
+  size: z.string().min(1, "Ukuran (size) wajib diisi"),
+  color: z.string().optional().nullable(),
+  stock: z.number().int().nonnegative("Stok tidak boleh negatif"),
+  isActive: z.boolean().default(true),
+});
+
+export const CreateProductPayloadSchema = z.object({
+  categoryId: z.string().uuid("Pilih kategori produk yang valid"),
+  title: z.string().min(1, "Judul produk wajib diisi"),
+  price: z.number().int().positive("Harga harus lebih dari 0"),
+  originalPrice: z.number().int().positive().nullable().optional(),
+  description: z.string().min(1, "Deskripsi wajib diisi"),
+  image: z.string().nullable().optional(),
+  variants: z.array(CreateProductVariantPayloadSchema).optional(),
+});
+
 export type PaymentStatus = z.infer<typeof PaymentStatusSchema>;
 export type FulfillmentType = z.infer<typeof FulfillmentTypeSchema>;
 export type FulfillmentStatus = z.infer<typeof FulfillmentStatusSchema>;
@@ -171,7 +200,14 @@ export type FulfillmentStatus = z.infer<typeof FulfillmentStatusSchema>;
 export type Category = z.infer<typeof CategorySchema>;
 export type ProductVariant = z.infer<typeof ProductVariantSchema>;
 export type Product = z.infer<typeof ProductSchema>;
+
 export type CartItem = z.infer<typeof CartItemSchema>;
 export type CreateOrderPayload = z.infer<typeof CreateOrderPayloadSchema>;
 export type OrderItem = z.infer<typeof OrderItemSchema>;
 export type Order = z.infer<typeof OrderSchema>;
+export type LoginPayload = z.infer<typeof LoginPayloadSchema>;
+export type CreateProductPayload = z.infer<typeof CreateProductPayloadSchema>;
+export type CreateProductVariantPayload = z.infer<
+  typeof CreateProductVariantPayloadSchema
+>;
+export type PaginatedProducts = z.infer<typeof PaginatedProductsSchema>;

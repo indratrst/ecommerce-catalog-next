@@ -6,6 +6,12 @@ import {
   OrderSchema,
   Product,
   ProductSchema,
+  CreateProductPayload,
+  CreateProductPayloadSchema,
+  LoginPayload,
+  LoginPayloadSchema,
+  PaginatedProducts,
+  PaginatedProductsSchema,
 } from "@/types";
 
 const BASE_URL =
@@ -101,19 +107,62 @@ export async function apiFetch<T>(
   return extractedData as T;
 }
 
+
+export const authApi = {
+  login: async (payload: LoginPayload) => {
+    const validPayload = LoginPayloadSchema.parse(payload);
+    const res = await apiFetch<{ token: string; user?: Record<string, unknown> }>(
+      "/auth/login",
+      {
+        method: "POST",
+        body: JSON.stringify(validPayload),
+      }
+    );
+
+    if (typeof window !== "undefined" && res?.token) {
+      localStorage.setItem("token", res.token);
+      // Simpan ke cookie agar Server Component (AdminLayout) bisa membacanya
+      document.cookie = `token=${res.token}; path=/; max-age=86400; SameSite=Lax`;
+    }
+    return res;
+  },
+
+  logout: () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("token");
+      document.cookie = "token=; path=/; max-age=0; SameSite=Lax";
+    }
+  },
+};
 // ==========================================
 // Service Helpers (Products & Orders)
 // ==========================================
 
-export const productApi = {
-  getAll: () =>
-    apiFetch<Product[]>("/products", {
-      cache: "no-store",
-      schema: z.array(ProductSchema),
-    }),
 
-  getByIdOrSlug: (idOrSlug: string) =>
-    apiFetch<Product>(`/products/${idOrSlug}`, {
+
+export const productApi = {
+    create: (payload: CreateProductPayload) => {
+    const validPayload = CreateProductPayloadSchema.parse(payload);
+    return apiFetch<Product>("/products", {
+      method: "POST",
+      body: JSON.stringify(validPayload),
+      schema: ProductSchema,
+    });
+  },
+ getAll: (params?: { page?: number; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.page) query.set("page", String(params.page));
+    if (params?.limit) query.set("limit", String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : "";
+
+    return apiFetch<PaginatedProducts>(`/products${qs}`, {
+      cache: "no-store",
+      schema: PaginatedProductsSchema,
+    });
+  },
+
+  getById: (id: string) =>
+    apiFetch<Product>(`/products/${id}`, {
       cache: "no-store",
       schema: ProductSchema,
     }),
