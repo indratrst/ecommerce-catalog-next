@@ -6,6 +6,12 @@ import {
   OrderSchema,
   Product,
   ProductSchema,
+  ProductVariant,
+  ProductVariantSchema,
+  Category,
+  CategorySchema,
+  AdminUser,
+  AdminUserSchema,
   CreateProductPayload,
   CreateProductPayloadSchema,
   LoginPayload,
@@ -14,8 +20,9 @@ import {
   PaginatedProductsSchema,
 } from "@/types";
 
-const BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+const BASE_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1"
+).replace(/\/+$/, "");
 
 export class ApiError extends Error {
   status: number;
@@ -58,8 +65,9 @@ export async function apiFetch<T>(
   const normalizedEndpoint = endpoint.startsWith("/")
     ? endpoint
     : `/${endpoint}`;
+  const requestUrl = `${BASE_URL}${normalizedEndpoint}`;
 
-  const response = await fetch(`${BASE_URL}${normalizedEndpoint}`, {
+  const response = await fetch(requestUrl, {
     ...restOptions,
     headers: {
       "Content-Type": "application/json",
@@ -74,7 +82,7 @@ export async function apiFetch<T>(
     const errorMessage =
       rawPayload?.message ||
       rawPayload?.error ||
-      `Request gagal dengan status ${response.status}`;
+      `${restOptions.method ?? "GET"} ${normalizedEndpoint} gagal dengan status ${response.status}`;
     throw new ApiError(errorMessage, response.status, rawPayload);
   }
 
@@ -141,15 +149,23 @@ export const authApi = {
 
 
 export const productApi = {
-    create: (payload: CreateProductPayload) => {
+  create: (payload: CreateProductPayload) => {
     const validPayload = CreateProductPayloadSchema.parse(payload);
     return apiFetch<Product>("/products", {
       method: "POST",
-      body: JSON.stringify(validPayload),
+      body: JSON.stringify({
+        categoryId: validPayload.categoryId,
+        title: validPayload.title,
+        price: validPayload.price,
+        originalPrice: validPayload.originalPrice,
+        description: validPayload.description,
+        image: validPayload.image,
+        variants: validPayload.variants,
+      }),
       schema: ProductSchema,
     });
   },
- getAll: (params?: { page?: number; limit?: number }) => {
+  getAll: (params?: { page?: number; limit?: number }) => {
     const query = new URLSearchParams();
     if (params?.page) query.set("page", String(params.page));
     if (params?.limit) query.set("limit", String(params.limit));
@@ -166,6 +182,111 @@ export const productApi = {
       cache: "no-store",
       schema: ProductSchema,
     }),
+
+  update: (id: string, payload: CreateProductPayload) => {
+    const validPayload = CreateProductPayloadSchema.parse(payload);
+    return apiFetch<Product>(`/products/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        categoryId: validPayload.categoryId,
+        title: validPayload.title,
+        price: validPayload.price,
+        originalPrice: validPayload.originalPrice,
+        description: validPayload.description,
+        image: validPayload.image,
+      }),
+      schema: ProductSchema,
+    });
+  },
+
+  delete: (id: string) =>
+    apiFetch<null>(`/products/${id}`, { method: "DELETE" }),
+
+  getVariants: (id: string) =>
+    apiFetch<ProductVariant[]>(`/products/${id}/variants`, {
+      cache: "no-store",
+      schema: z.array(ProductVariantSchema),
+    }),
+
+  createVariant: (
+    productId: string,
+    payload: { size: string; stock: number; color?: string | null; isActive?: boolean }
+  ) =>
+    apiFetch<ProductVariant>(`/products/${productId}/variants`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      schema: ProductVariantSchema,
+    }),
+
+  updateVariant: (
+    id: string,
+    payload: { size: string; stock: number; color?: string | null; isActive?: boolean }
+  ) =>
+    apiFetch<ProductVariant>(`/product-variants/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+      schema: ProductVariantSchema,
+    }),
+
+  deleteVariant: (id: string) =>
+    apiFetch<null>(`/product-variants/${id}`, { method: "DELETE" }),
+};
+
+export const categoryApi = {
+  getAll: () =>
+    apiFetch<Category[]>("/categories", {
+      cache: "no-store",
+      schema: z.array(CategorySchema),
+    }),
+
+  getById: (id: string) =>
+    apiFetch<Category>(`/categories/${id}`, {
+      cache: "no-store",
+      schema: CategorySchema,
+    }),
+
+  create: (payload: Pick<Category, "name"> & Partial<Pick<Category, "slug" | "description" | "image">>) =>
+    apiFetch<Category>("/categories", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      schema: CategorySchema,
+    }),
+
+  update: (id: string, payload: Pick<Category, "name"> & Partial<Pick<Category, "slug" | "description" | "image">>) =>
+    apiFetch<Category>(`/categories/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+      schema: CategorySchema,
+    }),
+
+  delete: (id: string) =>
+    apiFetch<null>(`/categories/${id}`, { method: "DELETE" }),
+};
+
+export const adminUserApi = {
+  getAll: (token?: string) =>
+    apiFetch<AdminUser[]>("/users", {
+      token,
+      cache: "no-store",
+      schema: z.array(AdminUserSchema),
+    }),
+
+  create: (payload: { name: string; email: string; password: string; role: AdminUser["role"] }) =>
+    apiFetch<AdminUser>("/users", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      schema: AdminUserSchema,
+    }),
+
+  update: (id: string, payload: { name: string; email: string; password?: string; role: AdminUser["role"] }) =>
+    apiFetch<AdminUser>(`/users/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+      schema: AdminUserSchema,
+    }),
+
+  delete: (id: string) =>
+    apiFetch<null>(`/users/${id}`, { method: "DELETE" }),
 };
 
 export const orderApi = {

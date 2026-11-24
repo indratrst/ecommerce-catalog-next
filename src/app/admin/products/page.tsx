@@ -7,44 +7,59 @@ import { Plus, Package, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { ApiError, productApi } from "@/lib/api";
+import { Product } from "@/types";
 
 export default function ProductsPage() {
   const router = useRouter();
-  const [products, setProducts] = useState<any[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  async function fetchProducts() {
-    setIsLoading(true);
-    try {
-      const res = await fetch("/api/products");
-      const data = await res.json();
-      setProducts(data);
-    } catch (error) {
-      console.error("Failed to fetch products:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    fetchProducts();
+    let active = true;
+    async function loadProducts() {
+      try {
+        const firstPage = await productApi.getAll({ page: 1, limit: 100 });
+        const remainingPages = await Promise.all(
+          Array.from({ length: Math.max(0, firstPage.totalPages - 1) }, (_, index) =>
+            productApi.getAll({ page: index + 2, limit: 100 })
+          )
+        );
+        if (active) {
+          setProducts([
+            ...firstPage.data,
+            ...remainingPages.flatMap((page) => page.data),
+          ]);
+        }
+      } catch (error) {
+        console.error("Failed to fetch products:", error);
+        if (active) {
+          setErrorMessage(error instanceof ApiError ? error.message : "Gagal memuat produk dari server.");
+        }
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    }
+    void Promise.resolve().then(loadProducts);
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleDelete = async () => {
     if (!deleteId) return;
     setIsDeleting(true);
+    setErrorMessage("");
     try {
-      const res = await fetch(`/api/products/${deleteId}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setProducts(products.filter((p) => p.id !== deleteId));
-        setDeleteId(null);
-      }
+      await productApi.delete(deleteId);
+      setProducts((current) => current.filter((product) => product.id !== deleteId));
+      setDeleteId(null);
     } catch (error) {
       console.error("Failed to delete product:", error);
+      setErrorMessage(error instanceof ApiError ? error.message : "Gagal menghapus produk.");
     } finally {
       setIsDeleting(false);
     }
@@ -54,11 +69,11 @@ export default function ProductsPage() {
     {
       key: "image",
       label: "Product",
-      render: (image: string, item: any) => (
+      render: (image: string | null | undefined, item: Product) => (
         <div className="flex items-center gap-3">
           <div className="relative w-12 h-12 rounded-xl bg-slate-100 overflow-hidden shrink-0">
             {image ? (
-              <Image src={image} alt={item.title} fill className="object-cover" />
+              <Image src={image} alt={item.title} fill unoptimized className="object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-slate-200">
                 <Package className="w-6 h-6 text-slate-400" />
@@ -67,7 +82,7 @@ export default function ProductsPage() {
           </div>
           <div className="min-w-0">
             <p className="font-bold text-slate-900 dark:text-white truncate max-w-[200px]">{item.title}</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">{item.category?.name}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">{item.category?.name ?? "Uncategorized"}</p>
           </div>
         </div>
       ),
@@ -83,7 +98,7 @@ export default function ProductsPage() {
     {
       key: "variants",
       label: "Stock",
-      render: (variants: any[]) => {
+      render: (variants: Product["variants"]) => {
         const totalStock = variants.reduce((acc, v) => acc + v.stock, 0);
         return (
           <div className="flex flex-col gap-1">
@@ -142,6 +157,12 @@ export default function ProductsPage() {
         onDelete={(item) => setDeleteId(item.id)}
         searchPlaceholder="Filter products by title, category..."
       />
+
+      {errorMessage && (
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {errorMessage}
+        </p>
+      )}
 
       <DeleteModal
         isOpen={!!deleteId}

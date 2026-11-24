@@ -6,44 +6,48 @@ import { DeleteModal } from "@/components/admin/DeleteModal";
 import { Plus, Tag } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ApiError, categoryApi } from "@/lib/api";
+import { Category } from "@/types";
 
 export default function CategoriesPage() {
   const router = useRouter();
-  const [categories, setCategories] = useState<any[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  async function fetchCategories() {
-    setIsLoading(true);
-    try {
-      const res = await fetch("/api/categories");
-      const data = await res.json();
-      setCategories(data);
-    } catch (error) {
-      console.error("Failed to fetch categories:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    fetchCategories();
+    let active = true;
+    categoryApi.getAll()
+      .then((data) => {
+        if (active) setCategories(data);
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to fetch categories:", error);
+        if (active) {
+          setErrorMessage(error instanceof ApiError ? error.message : "Gagal memuat kategori dari server.");
+        }
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleDelete = async () => {
     if (!deleteId) return;
     setIsDeleting(true);
+    setErrorMessage("");
     try {
-      const res = await fetch(`/api/categories/${deleteId}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setCategories(categories.filter((c) => c.id !== deleteId));
-        setDeleteId(null);
-      }
+      await categoryApi.delete(deleteId);
+      setCategories((current) => current.filter((category) => String(category.id) !== deleteId));
+      setDeleteId(null);
     } catch (error) {
       console.error("Failed to delete category:", error);
+      setErrorMessage(error instanceof ApiError ? error.message : "Gagal menghapus kategori.");
     } finally {
       setIsDeleting(false);
     }
@@ -53,7 +57,7 @@ export default function CategoriesPage() {
     {
       key: "name",
       label: "Category Name",
-      render: (name: string, item: any) => (
+      render: (name: string, item: Category) => (
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
             <Tag className="w-5 h-5" />
@@ -72,13 +76,6 @@ export default function CategoriesPage() {
       label: "Description",
       render: (desc: string) => (
         <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-1 max-w-xs">{desc || "No description"}</p>
-      ),
-    },
-    {
-      key: "_count",
-      label: "Products",
-      render: (count: any) => (
-        <span className="font-bold text-slate-900 dark:text-white">{count?.products || 0} items</span>
       ),
     },
   ];
@@ -106,9 +103,15 @@ export default function CategoriesPage() {
         data={categories}
         isLoading={isLoading}
         onEdit={(item) => router.push(`/admin/categories/${item.id}/edit`)}
-        onDelete={(item) => setDeleteId(item.id)}
+        onDelete={(item) => setDeleteId(String(item.id))}
         searchPlaceholder="Filter categories by name..."
       />
+
+      {errorMessage && (
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {errorMessage}
+        </p>
+      )}
 
       <DeleteModal
         isOpen={!!deleteId}

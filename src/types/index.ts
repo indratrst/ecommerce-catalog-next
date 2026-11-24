@@ -69,6 +69,16 @@ export const CategorySchema = z.object({
   name: z.string(),
   slug: z.string().optional(),
   description: z.string().optional(),
+  image: z.string().optional(),
+});
+
+export const AdminUserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().email(),
+  role: z.enum(["SUPERUSER", "ADMIN", "USER"]),
+  image: z.string().optional(),
+  createdAt: z.string(),
 });
 
 export const ProductVariantSchema = z.object({
@@ -198,6 +208,14 @@ export type FulfillmentType = z.infer<typeof FulfillmentTypeSchema>;
 export type FulfillmentStatus = z.infer<typeof FulfillmentStatusSchema>;
 
 export type Category = z.infer<typeof CategorySchema>;
+export type AdminUser = z.infer<typeof AdminUserSchema>;
+export type AdminRole = AdminUser["role"];
+export type AdminUserFormValues = {
+  name: string;
+  email: string;
+  password: string;
+  role: AdminRole;
+};
 export type ProductVariant = z.infer<typeof ProductVariantSchema>;
 export type Product = z.infer<typeof ProductSchema>;
 
@@ -211,3 +229,24 @@ export type CreateProductVariantPayload = z.infer<
   typeof CreateProductVariantPayloadSchema
 >;
 export type PaginatedProducts = z.infer<typeof PaginatedProductsSchema>;
+export type ProductFormVariant = {
+  id?: string;
+  productId?: string;
+  size: string;
+  stock: number | string;
+  color?: string | null;
+  isActive?: boolean;
+};
+export type ProductFormValues = {
+  title: string;
+  price: string | number;
+  description: string;
+  image: string;
+  categoryId: string;
+  variants: ProductFormVariant[];
+};
+export type CategoryFormValues = {
+  name: string;
+  slug: string;
+  description: string;
+};

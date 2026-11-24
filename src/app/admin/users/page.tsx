@@ -5,72 +5,91 @@ import { DataTable } from "@/components/admin/DataTable";
 import { DeleteModal } from "@/components/admin/DeleteModal";
 import { UserForm } from "@/components/admin/UserForm";
 import { Plus, Users, Shield, ShieldCheck, ShieldAlert, X } from "lucide-react";
+import { ApiError, adminUserApi } from "@/lib/api";
+import { AdminRole, AdminUser, AdminUserFormValues } from "@/types";
 
 export default function UsersPage() {
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   
   // Modal for creating/editing users
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<any>(null);
+  const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [formLoading, setFormLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   async function fetchUsers() {
-    setIsLoading(true);
     try {
-      const res = await fetch("/api/users");
-      const data = await res.json();
-      setUsers(data);
+      const nextUsers = await adminUserApi.getAll();
+      setUsers(nextUsers);
+      setErrorMessage("");
     } catch (error) {
       console.error("Failed to fetch users:", error);
+      setErrorMessage(error instanceof ApiError ? error.message : "Gagal memuat pengguna dari server.");
     } finally {
       setIsLoading(false);
     }
   }
 
   useEffect(() => {
-    fetchUsers();
+    let active = true;
+    adminUserApi.getAll()
+      .then((nextUsers) => {
+        if (active) setUsers(nextUsers);
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to fetch users:", error);
+        if (active) {
+          setErrorMessage(error instanceof ApiError ? error.message : "Gagal memuat pengguna dari server.");
+        }
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleDelete = async () => {
     if (!deleteId) return;
     setIsDeleting(true);
+    setErrorMessage("");
     try {
-      const res = await fetch(`/api/users/${deleteId}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setUsers(users.filter((u) => u.id !== deleteId));
-        setDeleteId(null);
-      }
+      await adminUserApi.delete(deleteId);
+      setUsers((current) => current.filter((user) => user.id !== deleteId));
+      setDeleteId(null);
     } catch (error) {
       console.error("Failed to delete user:", error);
+      setErrorMessage(error instanceof ApiError ? error.message : "Gagal menghapus pengguna.");
     } finally {
       setIsDeleting(false);
     }
   };
 
-  const handleFormSubmit = async (data: any) => {
+  const handleFormSubmit = async (data: AdminUserFormValues) => {
     setFormLoading(true);
+    setErrorMessage("");
     try {
-      const url = editingUser ? `/api/users/${editingUser.id}` : "/api/users";
-      const method = editingUser ? "PUT" : "POST";
-      
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-
-      if (res.ok) {
-        setIsModalOpen(false);
-        setEditingUser(null);
-        fetchUsers();
+      const payload = {
+        name: data.name,
+        email: data.email,
+        role: data.role,
+        ...(data.password ? { password: data.password } : {}),
+      };
+      if (editingUser) {
+        await adminUserApi.update(editingUser.id, payload);
+      } else {
+        await adminUserApi.create({ ...payload, password: data.password });
       }
+      setIsModalOpen(false);
+      setEditingUser(null);
+      await fetchUsers();
     } catch (error) {
       console.error("User action failed:", error);
+      setErrorMessage(error instanceof ApiError ? error.message : "Gagal menyimpan pengguna.");
     } finally {
       setFormLoading(false);
     }
@@ -80,7 +99,7 @@ export default function UsersPage() {
     {
       key: "name",
       label: "Name",
-      render: (name: string, item: any) => (
+      render: (name: string, item: AdminUser) => (
         <div className="flex flex-col">
           <span className="font-bold text-slate-900 dark:text-white">{name}</span>
           <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">{item.email}</span>
@@ -90,8 +109,8 @@ export default function UsersPage() {
     {
       key: "role",
       label: "Role",
-      render: (role: string) => {
-        const config: any = {
+      render: (role: AdminRole) => {
+        const config: Record<AdminRole, { bg: string; text: string; icon: typeof Shield }> = {
           SUPERUSER: { bg: "bg-purple-100", text: "text-purple-700", icon: ShieldCheck },
           ADMIN: { bg: "bg-blue-100", text: "text-blue-700", icon: Shield },
           USER: { bg: "bg-slate-100", text: "text-slate-700", icon: ShieldAlert },
@@ -149,6 +168,12 @@ export default function UsersPage() {
         searchPlaceholder="Filter users by name, email..."
       />
 
+      {errorMessage && (
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {errorMessage}
+        </p>
+      )}
+
       {/* User Form Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto">
@@ -160,6 +185,11 @@ export default function UsersPage() {
               <X className="w-5 h-5" />
             </button>
             <div className="p-8">
+              {errorMessage && (
+                <p role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {errorMessage}
+                </p>
+              )}
               <UserForm 
                 initialData={editingUser} 
                 onSubmit={handleFormSubmit} 

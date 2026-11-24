@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { Loader2, Plus, ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { Category, CategoryFormValues } from "@/types";
 
 interface CategoryFormProps {
-  initialData?: any;
-  onSubmit: (data: any) => Promise<void>;
+  initialData?: Category;
+  onSubmit: (data: CategoryFormValues) => Promise<void>;
   isLoading?: boolean;
 }
 

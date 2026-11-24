@@ -4,10 +4,12 @@ import { useState, useEffect } from "react";
 import { Loader2, Plus, ArrowLeft, Trash2, Box, Info } from "lucide-react";
 import Link from "next/link";
 import { ImageUpload } from "./ImageUpload";
+import { categoryApi } from "@/lib/api";
+import { Category, Product, ProductFormValues } from "@/types";
 
 interface ProductFormProps {
-  initialData?: any;
-  onSubmit: (data: any) => Promise<void>;
+  initialData?: Product;
+  onSubmit: (data: ProductFormValues) => Promise<void>;
   isLoading?: boolean;
 }
 
@@ -16,27 +18,35 @@ export function ProductForm({
   onSubmit, 
   isLoading 
 }: ProductFormProps) {
-  const [categories, setCategories] = useState<any[]>([]);
-  const [formData, setFormData] = useState({
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryError, setCategoryError] = useState("");
+  const [formData, setFormData] = useState<ProductFormValues>({
     title: initialData?.title || "",
-    price: initialData?.price || "",
+    price: initialData?.price?.toString() || "",
     description: initialData?.description || "",
     image: initialData?.image || "",
     categoryId: initialData?.categoryId || "",
-    variants: initialData?.variants || [{ size: "One Size", stock: 0, color: "" }],
+    variants: initialData?.variants?.map((variant) => ({
+      id: variant.id,
+      productId: variant.productId,
+      size: variant.size ?? "",
+      stock: variant.stock,
+      color: variant.color ?? "",
+      isActive: variant.isActive,
+    })) ?? [{ size: "One Size", stock: 0, color: "" }],
   });
 
   useEffect(() => {
     async function fetchCategories() {
       try {
-        const res = await fetch("/api/categories");
-        const data = await res.json();
+        const data = await categoryApi.getAll();
         setCategories(data);
         if (!formData.categoryId && data.length > 0) {
-          setFormData(prev => ({ ...prev, categoryId: data[0].id }));
+          setFormData(prev => ({ ...prev, categoryId: String(data[0].id) }));
         }
       } catch (error) {
         console.error("Failed to fetch categories:", error);
+        setCategoryError(error instanceof Error ? error.message : "Gagal memuat kategori.");
       }
     }
     fetchCategories();
@@ -45,18 +55,18 @@ export function ProductForm({
   const addVariant = () => {
     setFormData(prev => ({
       ...prev,
-      variants: [...prev.variants, { size: "", stock: 0, color: "" }]
+      variants: [...prev.variants, { size: "", stock: 0, color: "", isActive: true }]
     }));
   };
 
   const removeVariant = (index: number) => {
     setFormData(prev => ({
       ...prev,
-      variants: prev.variants.filter((_: any, i: number) => i !== index)
+      variants: prev.variants.filter((_, i) => i !== index)
     }));
   };
 
-  const updateVariant = (index: number, field: string, value: any) => {
+  const updateVariant = (index: number, field: keyof ProductFormValues["variants"][number], value: string | number | boolean | null) => {
     const newVariants = [...formData.variants];
     newVariants[index] = { ...newVariants[index], [field]: value };
     setFormData({ ...formData, variants: newVariants });
@@ -69,6 +79,11 @@ export function ProductForm({
 
   return (
     <div className="max-w-5xl mx-auto pb-20">
+      {categoryError && (
+        <p role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {categoryError}
+        </p>
+      )}
       <div className="flex items-center gap-4 mb-8">
         <Link 
           href="/admin/products"
@@ -170,7 +185,7 @@ export function ProductForm({
             </div>
 
             <div className="space-y-4">
-              {formData.variants.map((v: any, index: number) => (
+              {formData.variants.map((v, index) => (
                 <div key={index} className="grid grid-cols-1 sm:grid-cols-4 gap-4 p-4 rounded-xl border border-slate-100 dark:border-slate-800 relative group">
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Size</label>

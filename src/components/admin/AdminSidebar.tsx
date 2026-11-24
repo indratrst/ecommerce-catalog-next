@@ -12,9 +12,11 @@ import {
   ShoppingBag,
   ExternalLink
 } from "lucide-react";
+import { authApi } from "@/lib/api";
+import { AdminRole } from "@/types";
 
 interface SidebarProps {
-  role: Role;
+  role: AdminRole;
   userName: string;
 }
 
@@ -30,13 +32,9 @@ export function AdminSidebar({ role, userName }: SidebarProps) {
   ];
 
   async function handleLogout() {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      router.push("/login");
-      router.refresh();
-    } catch (err) {
-      console.error("Logout failed", err);
-    }
+    authApi.logout();
+    router.push("/login");
+    router.refresh();
   }
 
   return (

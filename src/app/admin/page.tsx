@@ -8,32 +8,32 @@ import {
   Plus,
 } from "lucide-react";
 import Link from "next/link";
-import { apiFetch, productApi } from "@/lib/api";
-import { Category } from "@/types";
+import { adminUserApi, categoryApi, productApi } from "@/lib/api";
+import { getSession } from "@/lib/auth";
+import Image from "next/image";
+import { AdminUser } from "@/types";
 
 export default async function AdminDashboard() {
   const cookieStore = await cookies();
   const token = cookieStore.get("token")?.value;
+  const session = await getSession();
 
-  const [productsRes, categoriesRes, usersRes] = await Promise.allSettled([
+  const [paginatedProducts, categories] = await Promise.all([
     productApi.getAll({ limit: 5 }),
-    apiFetch<Category[]>("/categories", { token, cache: "no-store" }),
-    apiFetch<unknown[]>("/users", { token, cache: "no-store" }),
+    categoryApi.getAll(),
   ]);
-
-  const paginatedProducts =
-    productsRes.status === "fulfilled" ? productsRes.value : null;
-  const recentProducts = paginatedProducts?.data ?? [];
-  const productCount = paginatedProducts?.totalData ?? recentProducts.length;
-
-  const categories =
-    categoriesRes.status === "fulfilled" && Array.isArray(categoriesRes.value)
-      ? categoriesRes.value
-      : [];
-  const users =
-    usersRes.status === "fulfilled" && Array.isArray(usersRes.value)
-      ? usersRes.value
-      : [];
+  let users: AdminUser[] = [];
+  let usersError: string | null = null;
+  if (session?.role === "SUPERUSER") {
+    try {
+      users = await adminUserApi.getAll(token);
+    } catch (error) {
+      usersError = error instanceof Error ? error.message : "Gagal memuat data pengguna.";
+      console.error("Failed to load dashboard users:", error);
+    }
+  }
+  const recentProducts = paginatedProducts.data;
+  const productCount = paginatedProducts.totalData;
 
   const categoryMap = new Map(
     categories.map((c) => [String(c.id), c.name])
@@ -54,17 +54,22 @@ export default async function AdminDashboard() {
       color: "text-emerald-500",
       bg: "bg-emerald-500/10",
     },
-    {
+    ...(session?.role === "SUPERUSER" ? [{
       name: "Admin Users",
-      value: users.length,
+      value: usersError ? "—" : users.length,
       icon: Users,
       color: "text-indigo-500",
       bg: "bg-indigo-500/10",
-    },
+    }] : []),
   ];
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
+      {usersError && (
+        <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Data pengguna tidak dapat dimuat dari API (`/users`): {usersError}. Pastikan Next.js terhubung ke server Go Fiber yang sudah menjalankan route admin terbaru.
+        </p>
+      )}
       <div>
         <h1 className="text-3xl font-bold text-slate-900 dark:text-white uppercase tracking-tight">
           Dashboard Overview
@@ -75,7 +80,7 @@ export default async function AdminDashboard() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className={`grid grid-cols-1 ${stats.length === 2 ? "md:grid-cols-2" : "md:grid-cols-3"} gap-6`}>
         {stats.map((stat) => (
           <div
             key={stat.name}
@@ -136,10 +141,12 @@ export default async function AdminDashboard() {
                   >
                     <div className="relative w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 overflow-hidden shrink-0">
                       {imgSrc && (
-                        <img
+                        <Image
                           src={imgSrc}
                           alt={product.title}
-                          className="object-cover w-full h-full"
+                          fill
+                          unoptimized
+                          className="object-cover"
                         />
                       )}
                     </div>
@@ -204,7 +211,7 @@ export default async function AdminDashboard() {
                 </p>
               </div>
             </Link>
-            <Link
+            {session?.role === "SUPERUSER" && <Link
               href="/admin/users"
               className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm hover:border-indigo-500 transition-all flex flex-col gap-4"
             >
@@ -219,7 +226,7 @@ export default async function AdminDashboard() {
                   User Roles
                 </p>
               </div>
-            </Link>
+            </Link>}
           </div>
         </div>
       </div>

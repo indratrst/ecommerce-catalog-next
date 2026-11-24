@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { Loader2, Plus, ArrowLeft, Shield } from "lucide-react";
 import Link from "next/link";
+import { AdminRole, AdminUser, AdminUserFormValues } from "@/types";
 
 interface UserFormProps {
-  initialData?: any;
-  onSubmit: (data: any) => Promise<void>;
+  initialData?: AdminUser | null;
+  onSubmit: (data: AdminUserFormValues) => Promise<void>;
   isLoading?: boolean;
 }
 
@@ -19,7 +20,7 @@ export function UserForm({
     name: initialData?.name || "",
     email: initialData?.email || "",
     password: "",
-    role: initialData?.role || "USER" as Role,
+    role: initialData?.role || "USER" as AdminRole,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -92,7 +93,7 @@ export function UserForm({
               <select
                 className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all appearance-none"
                 value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value as Role })}
+                onChange={(e) => setFormData({ ...formData, role: e.target.value as AdminRole })}
               >
                 <option value="USER">User (View Only)</option>
                 <option value="ADMIN">Admin (Manage Data)</option>
