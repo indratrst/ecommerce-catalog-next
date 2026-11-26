@@ -1,4 +1,4 @@
-# Space Commerce
+# Ecommerce catalog (Frontend)
 
 > E-commerce storefront and admin dashboard built with Next.js, Prisma, and TypeScript.
 
