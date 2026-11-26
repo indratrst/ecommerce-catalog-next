@@ -1,86 +1,72 @@
 "use client";
 
 import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Column, DataTable } from "@/components/admin/DataTable";
 import { DeleteModal } from "@/components/admin/DeleteModal";
 import { UserForm } from "@/components/admin/UserForm";
 import { Plus, Shield, ShieldCheck, ShieldAlert, X } from "lucide-react";
-import {
-  useCreateUser,
-  useDeleteUser,
-  useUpdateUser,
-  useUsers,
-} from "@/hooks/useUsers";
-import {
-  CreateUser,
-  UpdateUser,
-  UserResponse,
-} from "@/lib/validation/users.schema";
-import { toast } from "sonner";
+import { adminUserApi } from "@/lib/api";
+import type { AdminUser, AdminUserFormValues } from "@/types";
 import { LucideIcon } from "lucide-react";
 
 export default function UsersPage() {
-  const { data: users = [], isLoading } = useUsers();
-  const createUser = useCreateUser();
-  const updateUser = useUpdateUser();
+  const queryClient = useQueryClient();
+  const { data: users = [], isLoading, error } = useQuery({
+    queryKey: ["admin-users"],
+    queryFn: () => adminUserApi.getAll(),
+  });
+  const createUser = useMutation({
+    mutationFn: adminUserApi.create,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
+  });
+  const updateUser = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { name: string; email: string; role: AdminUser["role"]; password?: string; image?: string | null } }) => adminUserApi.update(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
+  });
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   // Modal for creating/editing users
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<UserResponse | null>(null);
+  const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [formLoading, setFormLoading] = useState(false);
 
-  const deleteUser = useDeleteUser();
+  const deleteUser = useMutation({
+    mutationFn: adminUserApi.delete,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
+  });
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    // setIsDeleting(true);
-    // try {
-    //   const res = await fetch(`/api/users/${deleteId}`, {
-    //     method: "DELETE",
-    //   });
-    //   if (res.ok) {
-    //     // Refetch data setelah delete
-    //     await refetch();
-    //     setDeleteId(null);
-    //   }
-    deleteUser.mutate(deleteId, {
-      onSuccess: () => {
-        setDeleteId(null);
-        // fetchCategories(); // atau invalidate query
-      },
-    });
+    try {
+      await deleteUser.mutateAsync(deleteId);
+      setDeleteId(null);
+    } catch (deleteError) {
+      alert(deleteError instanceof Error ? deleteError.message : "Failed to delete user.");
+    }
   };
 
-  const handleSubmit = async (data: CreateUser | UpdateUser) => {
+  const handleSubmit = async (data: AdminUserFormValues) => {
     setFormLoading(true);
     try {
       if (editingUser) {
-        if (!editingUser.id) {
-          toast("Cannot update user: Missing user ID");
-          return;
-        }
-        // Mode update
-        const updateData: Partial<UpdateUser> = {
+        await updateUser.mutateAsync({
+          id: editingUser.id,
+          data: {
           name: data.name,
           email: data.email,
           role: data.role,
-          // tambahkan field lain yang perlu diupdate
-        };
-        await updateUser.mutateAsync({ id: editingUser.id, data: updateData });
+          image: data.image || null,
+            ...(data.password ? { password: data.password } : {}),
+          },
+        });
       } else {
-        // Mode create
-        await createUser.mutateAsync(data as CreateUser);
+        await createUser.mutateAsync({ ...data, image: data.image || null });
       }
       setIsModalOpen(false);
       setEditingUser(null);
-      // Data akan otomatis refetch karena onSuccess di hook sudah handle invalidateQueries
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "An unexpected error occurred.";
-      toast(message);
+    } catch (submitError) {
+      throw submitError;
     } finally {
       setFormLoading(false);
     }
@@ -92,7 +78,7 @@ export default function UsersPage() {
     icon: LucideIcon;
   };
 
-  const roleConfig: Record<UserResponse["role"], RoleConfig> = {
+  const roleConfig: Record<AdminUser["role"], RoleConfig> = {
     SUPERUSER: {
       bg: "bg-purple-100",
       text: "text-purple-700",
@@ -106,7 +92,7 @@ export default function UsersPage() {
     },
   };
 
-  const columns: Column<UserResponse>[] = [
+  const columns: Column<AdminUser>[] = [
     {
       key: "name",
       label: "Name",
@@ -181,6 +167,7 @@ export default function UsersPage() {
         onDelete={(item) => setDeleteId(item.id)}
         searchPlaceholder="Filter users by name, email..."
       />
+      {error && <p role="alert" className="text-sm text-red-600">{error.message}</p>}
 
       {/* User Form Modal */}
       {isModalOpen && (

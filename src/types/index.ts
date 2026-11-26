@@ -65,11 +65,11 @@ export const FulfillmentStatusSchema = z.enum([
 // ==========================================
 
 export const CategorySchema = z.object({
-  id: z.union([z.string(), z.number()]).optional(),
+  id: z.string().optional(),
   name: z.string(),
   slug: z.string().optional(),
-  description: z.string().optional(),
-  image: z.string().optional(),
+  description: z.string().nullable().optional(),
+  image: z.string().nullable().optional(),
 });
 
 export const AdminUserSchema = z.object({
@@ -77,7 +77,7 @@ export const AdminUserSchema = z.object({
   name: z.string(),
   email: z.string().email(),
   role: z.enum(["SUPERUSER", "ADMIN", "USER"]),
-  image: z.string().optional(),
+  image: z.string().nullable().optional(),
   createdAt: z.string(),
 });
 
@@ -122,26 +122,25 @@ export const PaginatedProductsSchema = z.object({
 
 export const CartItemSchema = z.object({
   product: ProductSchema,
-  variant: ProductVariantSchema, // Wajib pilih varian karena harga & stok ada di level varian
+  variant: ProductVariantSchema.optional(),
   quantity: z.number().int().min(1),
 });
 
 export const CreateOrderPayloadSchema = z.object({
-  customerName: z.string().min(1, "Nama wajib diisi"),
-  customerEmail: z.string().email("Format email tidak valid"),
-  customerPhone: z.string().min(8, "Nomor HP tidak valid"),
-  shippingAddress: z.string().optional(),
-  shippingCity: z.string().optional(),
-  shippingPostalCode: z.string().optional(),
-  courier: z.string().optional(),
-  shippingCost: z.number().nonnegative().default(0),
-  fulfillmentType: FulfillmentTypeSchema,
-  notes: z.string().optional(),
+  customerName: z.string().trim().min(1, "Nama wajib diisi"),
+  customerEmail: z.string().trim().email("Format email tidak valid"),
+  customerPhone: z.string().trim().min(8, "Nomor HP tidak valid"),
+  shippingMethod: FulfillmentTypeSchema,
+  shippingAddress: z.string().trim().optional(),
+  storeLocation: z.string().trim().optional(),
+  shippingCourier: z.string().trim().optional(),
+  shippingCost: z.number().int().nonnegative(),
   items: z
     .array(
       z.object({
-        variantId: z.string(),
+        productVariantId: z.string().uuid(),
         quantity: z.number().int().min(1),
+        priceAtPurchase: z.number().int().nonnegative(),
       })
     )
     .min(1, "Keranjang tidak boleh kosong"),
@@ -149,28 +148,39 @@ export const CreateOrderPayloadSchema = z.object({
 export const OrderItemSchema = z.object({
   id: z.string(),
   orderId: z.string(),
-  variantId: z.string(),
+  productVariantId: z.string(),
   quantity: z.number().int(),
-  price: z.number(),
-  variant: ProductVariantSchema.optional(),
+  priceAtPurchase: z.number(),
+  variantSnapshot: z.record(z.string(), z.unknown()).optional(),
+  productVariant: z.object({
+    id: z.string(),
+    size: z.string().nullable().optional(),
+    color: z.string().nullable().optional(),
+    product: z.object({
+      id: z.string(),
+      title: z.string(),
+      image: z.string().nullable().optional(),
+    }).optional(),
+  }).optional(),
 });
 
 export const OrderSchema = z.object({
   id: z.string(),
-  externalId: z.string(),
+  externalId: z.string().nullable().optional(),
   userId: z.string().nullable().optional(),
   customerName: z.string(),
   customerEmail: z.string(),
   customerPhone: z.string(),
   shippingAddress: z.string().nullable().optional(),
-  shippingCost: z.number(),
+  shippingMethod: z.enum(["SHIPPING", "PICKUP_STORE"]),
+  shippingCourier: z.string().nullable().optional(),
   totalAmount: z.number(),
-  paymentStatus: PaymentStatusSchema,
-  fulfillmentType: FulfillmentTypeSchema,
-  fulfillmentStatus: FulfillmentStatusSchema,
+  paymentStatus: z.enum(["PENDING", "SETTLEMENT", "EXPIRED", "CANCEL", "DENY", "FAILED"]),
+  paymentMethod: z.string().nullable().optional(),
+  fulfillmentStatus: z.enum(["NOT_APPLICABLE", "PROCESSING", "READY_TO_PICKUP", "PICKED_UP", "SHIPPED", "DELIVERED"]),
   trackingNumber: z.string().nullable().optional(),
-  snapToken: z.string().optional(),
-  snapRedirectUrl: z.string().optional(),
+  snapToken: z.string().nullable().optional(),
+  snapRedirectUrl: z.string().nullable().optional(),
   stockReduced: z.boolean().optional(),
   items: z.array(OrderItemSchema).optional(),
   createdAt: z.string(),
@@ -215,6 +225,7 @@ export type AdminUserFormValues = {
   email: string;
   password: string;
   role: AdminRole;
+  image?: string | null;
 };
 export type ProductVariant = z.infer<typeof ProductVariantSchema>;
 export type Product = z.infer<typeof ProductSchema>;
@@ -249,4 +260,26 @@ export type CategoryFormValues = {
   name: string;
   slug: string;
   description: string;
+};
+export type AdminProductFormValues = {
+  categoryId: string;
+  title: string;
+  price: number;
+  originalPrice?: number | null;
+  description: string;
+  image?: string | null;
+  variants: Array<{
+    id?: string;
+    size: string;
+    color?: string | null;
+    stock: number;
+    isDeleted?: boolean;
+    isActive?: boolean;
+  }>;
+};
+export type AdminCategoryFormValues = {
+  name: string;
+  slug?: string;
+  description?: string;
+  image?: string | null;
 };

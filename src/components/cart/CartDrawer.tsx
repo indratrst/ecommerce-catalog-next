@@ -32,13 +32,14 @@ export function CartDrawer() {
           const filtered = allProducts
             .filter((p: { id: string }) => !cartIds.includes(String(p.id)))
             .slice(0, 4)
-            .map((p: { id: string; title: string; price: number; description: string; category: { name: string }; image: string | null; ratingRate: number | null; ratingCount: number | null }) => ({
+            .map((p: { id: string; title: string; price: number; description: string; category: { name: string }; image: string | null; ratingRate: number | null; ratingCount: number | null; variants?: Product["variants"] }) => ({
               id: p.id,
               title: p.title,
               price: p.price,
               description: p.description,
-              category: p.category?.name || "",
               image: p.image ?? undefined,
+              variants: p.variants ?? [],
+              category: p.category ? { name: p.category.name } : undefined,
               rating: {
                 rate: p.ratingRate ?? 0,
                 count: p.ratingCount ?? 0,
@@ -108,7 +109,7 @@ export function CartDrawer() {
           ) : (
             <ul className="space-y-6">
               {cart.map((item) => (
-                <li key={item.product.id} className="flex gap-4 border-b pb-6" style={{ borderColor: "var(--surface-border)" }}>
+                <li key={item.variant?.id ?? item.product.id} className="flex gap-4 border-b pb-6" style={{ borderColor: "var(--surface-border)" }}>
                   <div className="h-24 w-20 shrink-0 overflow-hidden" style={{ background: "var(--surface)" }}>
                     {item.product.image ? (
                       <img
@@ -130,9 +131,14 @@ export function CartDrawer() {
                         <p className="mt-1 text-sm font-medium" style={{ color: "var(--muted)" }}>
                           Rp {item.product.price.toLocaleString("id-ID")}
                         </p>
+                        {item.variant && (
+                          <p className="mt-1 text-xs uppercase text-muted-foreground">
+                            {item.variant.size ?? "One Size"}{item.variant.color ? ` / ${item.variant.color}` : ""}
+                          </p>
+                        )}
                       </div>
                       <button
-                        onClick={() => removeFromCart(item.product.id)}
+                        onClick={() => removeFromCart(item.variant?.id ?? item.product.id)}
                         className="text-red-400 hover:text-red-600 transition-colors"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -143,7 +149,7 @@ export function CartDrawer() {
                       <div className="flex items-center border" style={{ borderColor: "var(--surface-border)" }}>
                         <button
                           className="px-2 py-1 hover:opacity-70 transition-opacity"
-                          onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                          onClick={() => updateQuantity(item.variant?.id ?? item.product.id, item.quantity - 1)}
                         >
                           <Minus className="h-3 w-3" />
                         </button>
@@ -155,7 +161,7 @@ export function CartDrawer() {
                         </span>
                         <button
                           className="px-2 py-1 hover:opacity-70 transition-opacity"
-                          onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                          onClick={() => updateQuantity(item.variant?.id ?? item.product.id, item.quantity + 1)}
                         >
                           <Plus className="h-3 w-3" />
                         </button>
@@ -180,7 +186,7 @@ export function CartDrawer() {
                 <div key={product.id} className="min-w-[140px] snap-start flex flex-col group gap-2">
                   <Link href={`/product/${product.id}`} className="block relative aspect-3/4 overflow-hidden" onClick={() => setIsCartOpen(false)}>
                     <img
-                      src={product.image}
+                      src={product.image ?? undefined}
                       alt={product.title}
                       className="object-cover w-full h-full transition-transform duration-500 group-hover:scale-110"
                     />
@@ -190,13 +196,23 @@ export function CartDrawer() {
                       <h4 className="text-xs font-semibold uppercase line-clamp-1" style={{ color: "var(--foreground)" }}>{product.title}</h4>
                       <p className="text-xs" style={{ color: "var(--muted)" }}>Rp {product.price.toLocaleString("id-ID")}</p>
                     </div>
-                    <button
-                      onClick={() => addToCart(product)}
-                      className="mt-2 text-xs font-bold uppercase flex items-center justify-center gap-1 py-1 border transition-colors hover:bg-black hover:text-white"
-                      style={{ borderColor: "var(--foreground)", color: "var(--foreground)" }}
-                    >
-                      <PlusCircle className="h-3 w-3" /> Add
-                    </button>
+                    {product.variants?.some((variant) => variant.isActive && variant.stock > 0) ? (
+                      <button
+                        onClick={() => addToCart(product)}
+                        className="mt-2 text-xs font-bold uppercase flex items-center justify-center gap-1 py-1 border transition-colors hover:bg-black hover:text-white"
+                        style={{ borderColor: "var(--foreground)", color: "var(--foreground)" }}
+                      >
+                        <PlusCircle className="h-3 w-3" /> Add
+                      </button>
+                    ) : (
+                      <Link
+                        href={`/product/${product.id}`}
+                        className="mt-2 text-xs font-bold uppercase text-center py-1 border"
+                        style={{ borderColor: "var(--foreground)", color: "var(--foreground)" }}
+                      >
+                        Select Options
+                      </Link>
+                    )}
                   </div>
                 </div>
               ))}

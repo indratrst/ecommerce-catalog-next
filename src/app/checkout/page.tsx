@@ -1,28 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useCart } from "@/contexts/CartContext";
 import { CheckoutForm } from "@/components/checkout/CheckoutForm";
 import { ShippingSelector } from "@/components/checkout/ShippingSelector";
-import { PaymentSelector } from "@/components/checkout/PaymentSelector";
 import { OrderSummary } from "@/components/checkout/OrderSummary";
-import { PaymentConfirmationModal } from "@/components/checkout/PaymentConfirmationModal";
 import { BillingAddress, ShippingRate } from "@/types/checkout";
-import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import Link from "next/link";
+import { orderApi } from "@/lib/api";
+import { useRouter } from "next/navigation";
 
 export default function CheckoutPage() {
-  const { cart, cartTotal, clearCart } = useCart();
+  const { cart, cartTotal } = useCart();
   const router = useRouter();
   const [billingData, setBillingData] = useState<Partial<BillingAddress>>({});
   const [shippingRate, setShippingRate] = useState<ShippingRate | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [deliveryMethod, setDeliveryMethod] = useState<"shipping" | "pickup">("shipping");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [paymentStarted, setPaymentStarted] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
-  const totalAmount = cartTotal + (shippingRate?.price || 0);
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel("checkout-payment");
+    channel.onmessage = (event: MessageEvent<{ orderNumber?: string; transactionStatus?: string }>) => {
+      if (!event.data.orderNumber) return;
+      const params = new URLSearchParams({ orderNumber: event.data.orderNumber });
+      if (event.data.transactionStatus) {
+        params.set("transaction_status", event.data.transactionStatus);
+      }
+      router.replace(`/checkout/success?${params.toString()}`);
+    };
+    return () => channel.close();
+  }, [router]);
 
   const isFormValid = 
     billingData.firstName && 
@@ -30,51 +41,79 @@ export default function CheckoutPage() {
     billingData.email && 
     billingData.phone && 
     (deliveryMethod === "pickup" || (billingData.areaId && billingData.address)) && 
-    (deliveryMethod === "pickup" || shippingRate) && 
-    paymentMethod;
+    (deliveryMethod === "pickup" || shippingRate);
 
   const handlePlaceOrder = async () => {
     if (!isFormValid) return;
-    
-    // If QR method, show confirmation modal first
-    if (paymentMethod === "qris") {
-      setIsModalOpen(true);
-    } else {
-      await processOrder();
-    }
-  };
-
-  const processOrder = async () => {
+    setSubmitError("");
     setIsSubmitting(true);
-    setIsModalOpen(false);
-    
+    const paymentWindow = window.open("about:blank", "_blank");
+    if (!paymentWindow) {
+      setSubmitError("Izinkan pop-up untuk membuka halaman pembayaran Midtrans.");
+      setIsSubmitting(false);
+      return;
+    }
+    paymentWindow.opener = null;
+
     try {
-      if (paymentMethod === "qris") {
-        // Generate QRIS using Raja Ongkir Komerce
-        const res = await fetch("/api/rajaongkir", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "qris",
-            amount: totalAmount,
-            external_id: `ORDER-${Date.now()}`,
-          }),
-        });
-        const data = await res.json();
-        
-        // Simulating redirect to QR page or success page with QR
-        // In a real app, you'd handle the QR data here
-        console.log("QRIS Generated:", data);
-      } else {
-        // Normal mock process
-        await new Promise(resolve => setTimeout(resolve, 2000));
+      const customerName = `${billingData.firstName} ${billingData.lastName}`.trim();
+      const shippingAddress =
+        deliveryMethod === "pickup"
+          ? undefined
+          : [
+              billingData.address,
+              billingData.district_name,
+              billingData.city_name,
+              billingData.province_name,
+              billingData.postcode,
+            ]
+              .filter(Boolean)
+              .join(", ");
+      const items = cart.map((item) => {
+        const variant =
+          item.variant ??
+          item.product.variants?.find(
+            (candidate) => candidate.isActive && candidate.stock > 0,
+          );
+        if (!variant) {
+          throw new Error(
+            `${item.product.title} tidak memiliki varian yang tersedia. Hapus produk ini dari keranjang lalu pilih varian yang tersedia.`,
+          );
+        }
+        return {
+          productVariantId: variant.id,
+          quantity: item.quantity,
+          priceAtPurchase: item.product.price,
+        };
+      });
+
+      const order = await orderApi.create({
+        customerName,
+        customerEmail: billingData.email!,
+        customerPhone: billingData.phone!,
+        shippingMethod: deliveryMethod === "pickup" ? "PICKUP_STORE" : "SHIPPING",
+        shippingAddress,
+        storeLocation:
+          deliveryMethod === "pickup"
+            ? "Wellborn Flagship Store, Jl. Sultan Agung No. 24, Bandung"
+            : undefined,
+        shippingCourier:
+          deliveryMethod === "shipping" ? shippingRate?.courier_name : undefined,
+        shippingCost: deliveryMethod === "shipping" ? shippingRate?.price ?? 0 : 0,
+        items,
+      });
+
+      if (!order.snapRedirectUrl) {
+        throw new Error("Backend tidak mengembalikan URL pembayaran Midtrans.");
       }
-      
-      clearCart();
-      router.push("/checkout/success");
+      paymentWindow.location.replace(order.snapRedirectUrl);
+      setPaymentStarted(true);
+      setIsSubmitting(false);
     } catch (error) {
-      console.error(error);
-    } finally {
+      paymentWindow.close();
+      setSubmitError(
+        error instanceof Error ? error.message : "Gagal membuat pembayaran.",
+      );
       setIsSubmitting(false);
     }
   };
@@ -152,9 +191,10 @@ export default function CheckoutPage() {
                 <p className="text-xs text-muted-foreground">Wellborn Flagship Store<br/>Jl. Sultan Agung No. 24, Bandung</p>
               </div>
             )}
-            <PaymentSelector 
-              onSelect={(methodId) => setPaymentMethod(methodId)} 
-            />
+            <div className="flex flex-col justify-center gap-2 rounded-lg border-2 border-dashed p-6 text-center" style={{ borderColor: "var(--surface-border)" }}>
+              <p className="text-sm font-bold uppercase">Secure payment by Midtrans</p>
+              <p className="text-xs text-muted-foreground">Choose your payment method on the Midtrans payment page after placing your order.</p>
+            </div>
           </div>
         </div>
 
@@ -168,9 +208,9 @@ export default function CheckoutPage() {
           
           <button
             onClick={handlePlaceOrder}
-            disabled={!isFormValid || isSubmitting}
+            disabled={!isFormValid || isSubmitting || paymentStarted}
             className={`w-full mt-6 py-4 uppercase font-bold tracking-widest transition-all shadow-md flex items-center justify-center gap-2 ${
-              isFormValid && !isSubmitting
+              isFormValid && !isSubmitting && !paymentStarted
                 ? "bg-black text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200 scale-[1.02]"
                 : "bg-surface text-muted-foreground opacity-50 cursor-not-allowed border border-dashed"
             }`}
@@ -180,25 +220,29 @@ export default function CheckoutPage() {
                 <Loader2 className="h-5 w-5 animate-spin" /> Processing...
               </>
             ) : (
-              "Place Order"
+              paymentStarted ? "Payment Opened in New Tab" : "Pay with Midtrans"
             )}
           </button>
+          {paymentStarted && (
+            <p className="mt-3 text-center text-sm text-muted-foreground">
+              Selesaikan pembayaran di tab Midtrans yang baru. Halaman ini akan
+              berpindah setelah Midtrans mengembalikan hasil pembayaran.
+            </p>
+          )}
+          {submitError && (
+            <p role="alert" className="mt-3 text-center text-sm text-red-600">
+              {submitError}
+            </p>
+          )}
           
           {!isFormValid && (
             <p className="text-[10px] text-center text-muted-foreground mt-3 uppercase tracking-tighter">
-              Please complete all required fields, select shipping & payment method
+              Please complete all required fields and select a shipping service.
             </p>
           )}
         </div>
       </div>
 
-      <PaymentConfirmationModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onConfirm={processOrder}
-        items={cart}
-        total={totalAmount}
-      />
     </div>
   );
 }

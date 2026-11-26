@@ -1,58 +1,38 @@
 "use client";
 
 import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Column, DataTable } from "@/components/admin/DataTable";
 import { DeleteModal } from "@/components/admin/DeleteModal";
 import { Plus, Package, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { useDeleteProduct, useProducts } from "@/hooks/useProducts";
-import {
-  ProductResponse,
-  VariantResponse,
-} from "@/lib/validation/products.schema";
-import { ErrorSchema } from "@/types";
+import { useProducts } from "@/hooks/useProducts";
+import { productApi } from "@/lib/api";
+import type { Product, ProductVariant } from "@/types";
 
-type ProductWithCategory = ProductResponse & {
-  category?: {
-    id: string;
-    name: string;
-  };
-};
+type ProductWithCategory = Product;
 
 export default function ProductsPage() {
   const router = useRouter();
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [isDeleting] = useState(false);
+  const queryClient = useQueryClient();
 
   const { data: products, isLoading } = useProducts();
 
-  const deleteProduct = useDeleteProduct();
+  const deleteProduct = useMutation({
+    mutationFn: productApi.delete,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["products"] }),
+  });
   const handleDelete = async () => {
     if (!deleteId) return;
-
-    deleteProduct.mutate(deleteId, {
-      onSuccess: () => {
-        setDeleteId(null);
-        // Success toast
-        alert("Product deleted successfully");
-      },
-      onError: (error: ErrorSchema) => {
-        // Cek apakah error karena product memiliki orders
-        if (
-          error.response?.status === 409 ||
-          error.message?.includes("CANNOT_DELETE")
-        ) {
-          alert(
-            "Cannot delete product! This product has existing orders in history. " +
-              "Deleting it would corrupt order records.",
-          );
-        } else {
-          alert("Failed to delete product");
-        }
-      },
-    });
+    try {
+      await deleteProduct.mutateAsync(deleteId);
+      setDeleteId(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to delete product.");
+    }
   };
 
   const columns: Column<ProductWithCategory>[] = [
@@ -67,6 +47,8 @@ export default function ProductsPage() {
                 src={image}
                 fill
                 alt={item.title}
+                priority
+            unoptimized
                 className="object-cover"
               />
             ) : (
@@ -99,7 +81,7 @@ export default function ProductsPage() {
     {
       key: "variants",
       label: "Stock",
-      render: (variants: VariantResponse[]) => {
+      render: (variants: ProductVariant[]) => {
         const totalStock = variants.reduce((acc, v) => acc + v.stock, 0);
         return (
           <div className="flex flex-col gap-1">
@@ -170,7 +152,7 @@ export default function ProductsPage() {
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
-        isLoading={isDeleting}
+        isLoading={deleteProduct.isPending}
         title="Delete Product"
         description="Are you sure you want to delete this product? This action cannot be undone and will also remove all its variants."
       />

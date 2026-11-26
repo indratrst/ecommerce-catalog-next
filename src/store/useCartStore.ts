@@ -1,13 +1,13 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { Product, CartItem } from "@/types";
+import { Product, CartItem, ProductVariant } from "@/types";
 
 interface CartState {
   items: CartItem[];
   isCartOpen: boolean;
   
   // Actions
-  addItem: (product: Product, quantity?: number, maxStock?: number) => void;
+  addItem: (product: Product, quantity?: number, variant?: ProductVariant) => void;
   removeItem: (productId: string | number) => void;
   updateQuantity: (productId: string | number, quantity: number, maxStock?: number) => void;
   clearCart: () => void;
@@ -25,27 +25,32 @@ export const useCartStore = create<CartState>()(
       items: [],
       isCartOpen: false,
 
-      addItem: (product, quantity = 1, maxStock) => {
+      addItem: (product, quantity = 1, requestedVariant) => {
+        const variant =
+          requestedVariant ??
+          product.variants?.find((candidate) => candidate.isActive && candidate.stock > 0);
+        if (!variant) return;
+
         const currentItems = get().items;
-        const existingItem = currentItems.find((item) => item.product.id === product.id);
+        const existingItem = currentItems.find(
+          (item) => item.variant?.id === variant.id,
+        );
 
         if (existingItem) {
           const newQuantity = existingItem.quantity + quantity;
-          // Apply maxStock if provided
-          const finalQuantity = maxStock !== undefined ? Math.min(newQuantity, maxStock) : newQuantity;
+          const finalQuantity = Math.min(newQuantity, variant.stock);
           
           set({
             items: currentItems.map((item) =>
-              item.product.id === product.id
+              item.variant?.id === variant.id
                 ? { ...item, quantity: finalQuantity }
                 : item
             ),
           });
         } else {
-          // New item, also respect maxStock
-          const finalQuantity = maxStock !== undefined ? Math.min(quantity, maxStock) : quantity;
+          const finalQuantity = Math.min(quantity, variant.stock);
           set({
-            items: [...currentItems, { product, quantity: finalQuantity }],
+            items: [...currentItems, { product, variant, quantity: finalQuantity }],
           });
         }
 
@@ -54,7 +59,9 @@ export const useCartStore = create<CartState>()(
 
       removeItem: (productId) => {
         set({
-          items: get().items.filter((item) => item.product.id !== productId),
+          items: get().items.filter(
+            (item) => (item.variant?.id ?? item.product.id) !== productId,
+          ),
         });
       },
 
@@ -69,7 +76,9 @@ export const useCartStore = create<CartState>()(
 
         set({
           items: get().items.map((item) =>
-            item.product.id === productId ? { ...item, quantity: finalQuantity } : item
+            (item.variant?.id ?? item.product.id) === productId
+              ? { ...item, quantity: finalQuantity }
+              : item
           ),
         });
       },

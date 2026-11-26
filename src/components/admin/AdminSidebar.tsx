@@ -12,10 +12,11 @@ import {
   ExternalLink,
   BanknoteArrowUp,
 } from "lucide-react";
-import { Role } from "@prisma/client";
+import { authApi } from "@/lib/api";
+import type { AdminRole } from "@/types";
 
 interface SidebarProps {
-  role: Role;
+  role: AdminRole;
   userName: string;
 }
 
@@ -51,14 +52,10 @@ export function AdminSidebar({ role, userName }: SidebarProps) {
     { name: "Users", icon: Users, href: "/admin/users", roles: ["SUPERUSER"] },
   ];
 
-  async function handleLogout() {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      router.push("/login");
-      router.refresh();
-    } catch (err) {
-      console.error("Logout failed", err);
-    }
+  function handleLogout() {
+    authApi.logout();
+    router.push("/login");
+    router.refresh();
   }
 
   return (

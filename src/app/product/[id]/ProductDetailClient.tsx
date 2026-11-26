@@ -34,7 +34,11 @@ export default function ProductDetailClient({
   const currentStock = selectedVariant ? selectedVariant.stock : totalStock;
 
   const handleAddToCart = () => {
-    addToCart(product, quantity);
+    const variant = product.variants.find(
+      (candidate) => candidate.id === selectedVariant?.id,
+    );
+    if (!variant) return;
+    addToCart(product, quantity, variant);
   };
 
   return (
@@ -153,7 +157,7 @@ export default function ProductDetailClient({
 
           <button
             onClick={handleAddToCart}
-            disabled={currentStock === 0}
+            disabled={currentStock === 0 || !selectedVariant}
             className={`w-full py-4 px-8 uppercase font-bold tracking-widest flex items-center justify-center gap-3 shadow-lg transition-colors ${
               currentStock === 0
                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"

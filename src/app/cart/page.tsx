@@ -22,13 +22,14 @@ export default function CartPage() {
           const filtered = allProducts
             .filter((p: { id: string }) => !cartIds.includes(String(p.id)))
             .slice(0, 4)
-            .map((p: { id: string; title: string; price: number; description: string; category: { name: string }; image: string | null; ratingRate: number | null; ratingCount: number | null }) => ({
+            .map((p: { id: string; title: string; price: number; description: string; category: { name: string } | null; image: string | null; ratingRate: number | null; ratingCount: number | null; variants?: Product["variants"] }) => ({
               id: p.id,
               title: p.title,
               price: p.price,
               description: p.description,
-              category: p.category?.name || "",
+              category: p.category ? { name: p.category.name } : null,
               image: p.image ?? undefined,
+              variants: p.variants ?? [],
               rating: {
                 rate: p.ratingRate ?? 0,
                 count: p.ratingCount ?? 0,
@@ -84,7 +85,7 @@ export default function CartPage() {
 
           <ul className="space-y-6 md:space-y-0 md:divide-y" style={{ borderColor: "var(--surface-border)" }}>
             {cart.map((item) => (
-              <li key={item.product.id} className="flex flex-col md:grid md:grid-cols-6 items-center gap-4 py-6" style={{ borderColor: "var(--surface-border)" }}>
+              <li key={item.variant?.id ?? item.product.id} className="flex flex-col md:grid md:grid-cols-6 items-center gap-4 py-6" style={{ borderColor: "var(--surface-border)" }}>
                 <div className="col-span-3 flex items-center gap-6 w-full">
                   <div className="h-32 w-24 shrink-0 relative overflow-hidden" style={{ background: "var(--surface)" }}>
                     {item.product.image ? (
@@ -101,8 +102,13 @@ export default function CartPage() {
                     <h3 className="font-semibold uppercase tracking-wide line-clamp-2 mb-2" style={{ color: "var(--foreground)" }}>
                       {item.product.title}
                     </h3>
+                    {item.variant && (
+                      <p className="mb-2 text-xs uppercase text-muted-foreground">
+                        {item.variant.size ?? "One Size"}{item.variant.color ? ` / ${item.variant.color}` : ""}
+                      </p>
+                    )}
                     <button
-                      onClick={() => removeFromCart(item.product.id)}
+                      onClick={() => removeFromCart(item.variant?.id ?? item.product.id)}
                       className="text-sm text-red-500 font-medium hover:text-red-700 uppercase flex items-center gap-1"
                     >
                       <Trash2 className="h-4 w-4" /> Remove
@@ -120,7 +126,7 @@ export default function CartPage() {
                   <div className="flex items-center border w-fit" style={{ borderColor: "var(--surface-border)", color: "var(--foreground)" }}>
                     <button
                       className="px-3 py-2 hover:opacity-70 transition-opacity"
-                      onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                      onClick={() => updateQuantity(item.variant?.id ?? item.product.id, item.quantity - 1)}
                     >
                       <Minus className="h-4 w-4" />
                     </button>
@@ -129,7 +135,7 @@ export default function CartPage() {
                     </span>
                     <button
                       className="px-3 py-2 hover:opacity-70 transition-opacity"
-                      onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                      onClick={() => updateQuantity(item.variant?.id ?? item.product.id, item.quantity + 1)}
                     >
                       <Plus className="h-4 w-4" />
                     </button>

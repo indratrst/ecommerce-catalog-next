@@ -12,7 +12,7 @@ import {
   CategorySchema,
   AdminUser,
   AdminUserSchema,
-  CreateProductPayload,
+  AdminProductFormValues,
   CreateProductPayloadSchema,
   LoginPayload,
   LoginPayloadSchema,
@@ -70,7 +70,9 @@ export async function apiFetch<T>(
   const response = await fetch(requestUrl, {
     ...restOptions,
     headers: {
-      "Content-Type": "application/json",
+      ...(typeof FormData !== "undefined" && restOptions.body instanceof FormData
+        ? {}
+        : { "Content-Type": "application/json" }),
       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       ...headers,
     },
@@ -149,8 +151,16 @@ export const authApi = {
 
 
 export const productApi = {
-  create: (payload: CreateProductPayload) => {
-    const validPayload = CreateProductPayloadSchema.parse(payload);
+  create: (payload: AdminProductFormValues) => {
+    const validPayload = CreateProductPayloadSchema.parse({
+      ...payload,
+      variants: payload.variants.map(({ size, stock, color, isActive }) => ({
+        size,
+        stock,
+        color,
+        isActive,
+      })),
+    });
     return apiFetch<Product>("/products", {
       method: "POST",
       body: JSON.stringify({
@@ -190,9 +200,12 @@ export const productApi = {
       schema: ProductSchema,
     }),
 
-  update: (id: string, payload: CreateProductPayload) => {
-    const validPayload = CreateProductPayloadSchema.parse(payload);
-    return apiFetch<Product>(`/products/${id}`, {
+  update: async (id: string, payload: AdminProductFormValues) => {
+    const validPayload = CreateProductPayloadSchema.parse({
+      ...payload,
+      variants: undefined,
+    });
+    const updatedProduct = await apiFetch<Product>(`/products/${id}`, {
       method: "PUT",
       body: JSON.stringify({
         categoryId: validPayload.categoryId,
@@ -204,6 +217,30 @@ export const productApi = {
       }),
       schema: ProductSchema,
     });
+
+    const existingVariants = await productApi.getVariants(id);
+    const submittedIds = new Set(
+      payload.variants.flatMap((variant) => variant.id ? [variant.id] : []),
+    );
+    const removedVariants = existingVariants.filter(
+      (variant) => !submittedIds.has(variant.id),
+    );
+    await Promise.all([
+      ...removedVariants.map((variant) => productApi.deleteVariant(variant.id)),
+      ...payload.variants.map((variant) => {
+        const variantPayload = {
+          size: variant.size,
+          stock: variant.stock,
+          color: variant.color,
+          isActive: variant.isActive ?? true,
+        };
+        return variant.id
+          ? productApi.updateVariant(variant.id, variantPayload)
+          : productApi.createVariant(id, variantPayload);
+      }),
+    ]);
+
+    return updatedProduct;
   },
 
   delete: (id: string) =>
@@ -278,14 +315,14 @@ export const adminUserApi = {
       schema: z.array(AdminUserSchema),
     }),
 
-  create: (payload: { name: string; email: string; password: string; role: AdminUser["role"] }) =>
+  create: (payload: { name: string; email: string; password: string; role: AdminUser["role"]; image?: string | null }) =>
     apiFetch<AdminUser>("/users", {
       method: "POST",
       body: JSON.stringify(payload),
       schema: AdminUserSchema,
     }),
 
-  update: (id: string, payload: { name: string; email: string; password?: string; role: AdminUser["role"] }) =>
+  update: (id: string, payload: { name: string; email: string; password?: string; role: AdminUser["role"]; image?: string | null }) =>
     apiFetch<AdminUser>(`/users/${id}`, {
       method: "PUT",
       body: JSON.stringify(payload),
@@ -296,21 +333,56 @@ export const adminUserApi = {
     apiFetch<null>(`/users/${id}`, { method: "DELETE" }),
 };
 
-export const orderApi = {
-  create: (payload: CreateOrderPayload) => {
-    // Validasi payload di sisi klien sebelum dikirim ke Go Fiber
-    const validPayload = CreateOrderPayloadSchema.parse(payload);
+export const imageApi = {
+  upload: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiFetch<{ publicUrl: string }>("/uploads", {
+      method: "POST",
+      body: formData,
+      schema: z.object({ publicUrl: z.string().url() }),
+    });
+  },
+};
 
-    return apiFetch<Order>("/orders", {
+export const orderApi = {
+  create: async (payload: CreateOrderPayload) => {
+    const validPayload = CreateOrderPayloadSchema.parse(payload);
+    const order = await apiFetch<Order>("/orders/checkout", {
       method: "POST",
       body: JSON.stringify(validPayload),
       schema: OrderSchema,
     });
+    if (!order.snapRedirectUrl) {
+      throw new ApiError(
+        "Backend tidak mengembalikan URL pembayaran Midtrans.",
+        502,
+        order,
+      );
+    }
+    return order;
   },
+
+  getAll: (token?: string) =>
+    apiFetch<Order[]>("/orders", {
+      token,
+      cache: "no-store",
+      schema: z.array(OrderSchema),
+    }),
 
   getById: (id: string) =>
     apiFetch<Order>(`/orders/${id}`, {
       cache: "no-store",
+      schema: OrderSchema,
+    }),
+
+  updateShipment: (
+    id: string,
+    payload: { trackingNumber?: string; status: string },
+  ) =>
+    apiFetch<Order>(`/orders/${id}/shipment`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
       schema: OrderSchema,
     }),
 };

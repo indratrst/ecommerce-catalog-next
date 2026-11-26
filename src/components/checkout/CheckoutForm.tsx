@@ -1,9 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { BillingAddress } from "@/types/checkout";
-import { MapPin, Phone, Mail, User, ChevronDown } from "lucide-react";
-import { getProvinces, getRegencies, getDistricts } from "@/services/wilayah";
+import { Phone, Mail, User, ChevronDown } from "lucide-react";
+import {
+  getProvinces,
+  getRegencies,
+  getDistricts,
+} from "@/services/wilayah";
 
 interface CheckoutFormProps {
   deliveryMethod: "shipping" | "pickup";
@@ -13,75 +17,14 @@ interface CheckoutFormProps {
 export function CheckoutForm({ deliveryMethod, onChange }: CheckoutFormProps) {
   const [formData, setFormData] = useState<Partial<BillingAddress>>({});
   
-  const [provinces, setProvinces] = useState<any[]>([]);
-  const [regencies, setRegencies] = useState<any[]>([]);
-  const [districts, setDistricts] = useState<any[]>([]);
+  const provinces = getProvinces().data;
 
   const [selectedProvince, setSelectedProvince] = useState("");
   const [selectedRegency, setSelectedRegency] = useState("");
   const [selectedDistrict, setSelectedDistrict] = useState("");
 
-  const [loading, setLoading] = useState({
-    provinces: false,
-    regencies: false,
-    districts: false
-  });
-
-  // Load Provinces on mount
-  useEffect(() => {
-    async function loadProvinces() {
-      setLoading(prev => ({ ...prev, provinces: true }));
-      try {
-        const res = await getProvinces();
-        setProvinces(res.data || []);
-      } catch (e) {
-        console.error(e);
-        setProvinces([]);
-      }
-      setLoading(prev => ({ ...prev, provinces: false }));
-    }
-    loadProvinces();
-  }, []);
-
-  // Load Regencies when province changes
-  useEffect(() => {
-    if (!selectedProvince) {
-      setRegencies([]);
-      return;
-    }
-    async function loadRegencies() {
-      setLoading(prev => ({ ...prev, regencies: true }));
-      try {
-        const res = await getRegencies(selectedProvince);
-        setRegencies(res.data || []);
-      } catch (e) {
-        console.error(e);
-        setRegencies([]);
-      }
-      setLoading(prev => ({ ...prev, regencies: false }));
-    }
-    loadRegencies();
-  }, [selectedProvince]);
-
-  // Load Districts when regency changes
-  useEffect(() => {
-    if (!selectedRegency) {
-      setDistricts([]);
-      return;
-    }
-    async function loadDistricts() {
-      setLoading(prev => ({ ...prev, districts: true }));
-      try {
-        const res = await getDistricts(selectedRegency);
-        setDistricts(res.data || []);
-      } catch (e) {
-        console.error(e);
-        setDistricts([]);
-      }
-      setLoading(prev => ({ ...prev, districts: false }));
-    }
-    loadDistricts();
-  }, [selectedRegency]);
+  const regencies = getRegencies(selectedProvince).data;
+  const districts = getDistricts(selectedRegency).data;
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -96,11 +39,21 @@ export function CheckoutForm({ deliveryMethod, onChange }: CheckoutFormProps) {
     setSelectedProvince(code);
     setSelectedRegency("");
     setSelectedDistrict("");
-    
-    onChange({ 
-      ...formData, 
+    setFormData({
+      ...formData,
+      areaId: "",
       areaName: province?.name || "",
-      province_name: province?.name || ""
+      province_name: province?.name || "",
+      city_name: undefined,
+      district_name: undefined,
+    });
+    onChange({
+      ...formData,
+      areaId: "",
+      areaName: province?.name || "",
+      province_name: province?.name || "",
+      city_name: undefined,
+      district_name: undefined,
     });
   };
 
@@ -230,7 +183,7 @@ export function CheckoutForm({ deliveryMethod, onChange }: CheckoutFormProps) {
                   value={selectedProvince}
                 >
                   <option value="" style={{ backgroundColor: "var(--surface)", color: "var(--foreground)" }}>Select Province</option>
-                  {Array.isArray(provinces) && provinces.map(p => (
+                  {provinces.map(p => (
                     <option key={p.code} value={p.code} style={{ backgroundColor: "var(--surface)", color: "var(--foreground)" }}>{p.name}</option>
                   ))}
                 </select>
@@ -245,12 +198,14 @@ export function CheckoutForm({ deliveryMethod, onChange }: CheckoutFormProps) {
                 <select
                   className="w-full bg-surface border-none p-3 text-sm focus:ring-1 focus:ring-foreground appearance-none cursor-pointer"
                   style={{ backgroundColor: "var(--surface)", color: "var(--foreground)" }}
-                  disabled={!selectedProvince || loading.regencies}
+                  disabled={!selectedProvince || regencies.length === 0}
                   onChange={handleRegencyChange}
                   value={selectedRegency}
                 >
-                  <option value="" style={{ backgroundColor: "var(--surface)", color: "var(--foreground)" }}>Select City</option>
-                  {Array.isArray(regencies) && regencies.map(r => (
+                  <option value="" style={{ backgroundColor: "var(--surface)", color: "var(--foreground)" }}>
+                    {selectedProvince && regencies.length === 0 ? "No mock city data for this province" : "Select City"}
+                  </option>
+                  {regencies.map(r => (
                     <option key={r.code} value={r.code} style={{ backgroundColor: "var(--surface)", color: "var(--foreground)" }}>{r.name}</option>
                   ))}
                 </select>
@@ -265,12 +220,14 @@ export function CheckoutForm({ deliveryMethod, onChange }: CheckoutFormProps) {
                 <select
                   className="w-full bg-surface border-none p-3 text-sm focus:ring-1 focus:ring-foreground appearance-none cursor-pointer"
                   style={{ backgroundColor: "var(--surface)", color: "var(--foreground)" }}
-                  disabled={!selectedRegency || loading.districts}
+                  disabled={!selectedRegency || districts.length === 0}
                   onChange={handleDistrictChange}
                   value={selectedDistrict}
                 >
-                  <option value="" style={{ backgroundColor: "var(--surface)", color: "var(--foreground)" }}>Select District</option>
-                  {Array.isArray(districts) && districts.map(d => (
+                  <option value="" style={{ backgroundColor: "var(--surface)", color: "var(--foreground)" }}>
+                    {selectedRegency && districts.length === 0 ? "No mock district data for this city" : "Select District"}
+                  </option>
+                  {districts.map(d => (
                     <option key={d.code} value={d.code} style={{ backgroundColor: "var(--surface)", color: "var(--foreground)" }}>{d.name}</option>
                   ))}
                 </select>

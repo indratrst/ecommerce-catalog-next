@@ -1,173 +1,73 @@
 "use client";
 
-import { Loader2, Plus, ArrowLeft, Shield } from "lucide-react";
+import { useState } from "react";
 import Link from "next/link";
-import { Role } from "@prisma/client";
-import {
-  CreateUser,
-  CreateUserSchema,
-  UserResponse,
-} from "@/lib/validation/users.schema";
-import { FieldErrors, useForm } from "react-hook-form";
-import { toast } from "sonner";
-import { standardSchemaResolver } from "@hookform/resolvers/standard-schema";
+import { ArrowLeft, Loader2, Plus, Shield } from "lucide-react";
+import type { AdminRole, AdminUserFormValues } from "@/types";
+import { ImageUpload } from "./ImageUpload";
 
 interface UserFormProps {
-  initialData?: UserResponse | null;
-  onSubmit: (data: CreateUser) => Promise<void>;
+  initialData?: { name: string; email: string; role: AdminRole; image?: string | null } | null;
+  onSubmit: (data: AdminUserFormValues) => Promise<unknown>;
   isLoading?: boolean;
 }
 
+const fieldClass =
+  "w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 dark:border-slate-700 dark:bg-slate-800 dark:text-white";
+
 export function UserForm({ initialData, onSubmit, isLoading }: UserFormProps) {
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<CreateUser>({
-    resolver: standardSchemaResolver(CreateUserSchema),
-    defaultValues: {
-      name: initialData?.name || "",
-      email: initialData?.email || "",
-      password: "",
-      role: initialData?.role || ("USER" as Role),
-    },
+  const [values, setValues] = useState<AdminUserFormValues>({
+    name: initialData?.name ?? "",
+    email: initialData?.email ?? "",
+    password: "",
+    role: initialData?.role ?? "USER",
+    image: initialData?.image ?? "",
   });
+  const [error, setError] = useState("");
 
-  // const handleSubmit = async (e: React.FormEvent) => {
-  //   e.preventDefault();
-  //   await onSubmit(formData);
-  // };
-
-  const onFormSubmit = async (data: CreateUser) => {
-    // e.preventDefault();
-    await onSubmit(data);
-  };
-
-  const onFormError = (errors: FieldErrors<CreateUser>) => {
-    if (process.env.NODE_ENV === "development") {
-      console.log("❌ Validation errors:", errors);
-    }
-
-    // 2. Pemicu Toast Error dari sonner
-    toast.error("Gagal menyimpan! Silakan periksa kembali form Anda.");
-
-    // 3. Logika auto-scroll kamu yang sebelumnya (tetap dipertahankan)
-    const firstErrorKey = Object.keys(errors)[0];
-    if (firstErrorKey) {
-      // Catatan: Karena kamu menggunakan react-hook-form, gunakan querySelector berdasarkan 'name' attribute
-      const element = document.querySelector(
-        `[name="${firstErrorKey}"]`,
-      ) as HTMLElement;
-      element?.scrollIntoView({ behavior: "smooth", block: "center" });
-      element?.focus();
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    try {
+      await onSubmit(values);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Gagal menyimpan user.");
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="flex items-center gap-4 mb-8">
-        <Link
-          href="/admin/users"
-          className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white uppercase tracking-tight">
-          {initialData ? "Edit User" : "New User"}
-        </h2>
+    <div className="mx-auto max-w-4xl">
+      <div className="mb-8 flex items-center gap-4">
+        <Link href="/admin/users" className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft className="h-5 w-5" /></Link>
+        <h2 className="text-2xl font-bold uppercase tracking-tight text-slate-900 dark:text-white">{initialData ? "Edit User" : "New User"}</h2>
       </div>
-
-      <form
-        onSubmit={handleSubmit(onFormSubmit, onFormError)}
-        className="space-y-8 bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm"
-      >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
-              Full Name
-            </label>
-            <input
-              required
-              placeholder="e.g. John Doe"
-              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
-              {...register("name")}
-            />
-            {errors.name && (
-              <p className="text-xs text-red-500">{errors.name.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
-              Email Address
-            </label>
-            <input
-              required
-              type="email"
-              placeholder="e.g. user@example.com"
-              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
-              {...register("email")}
-            />
-            {errors.email && (
-              <p className="text-xs text-red-500">{errors.email.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
-              {initialData
-                ? "New Password (Leave blank to keep current)"
-                : "Password"}
-            </label>
-            <input
-              required={!initialData}
-              type="password"
-              placeholder="••••••••"
-              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
-              {...register("password")}
-            />
-            {errors.password && (
-              <p className="text-xs text-red-500">{errors.password.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
-              User Role
-            </label>
-            <div className="relative">
-              <select
-                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all appearance-none"
-                {...register("role")}
-              >
-                <option value="USER">User (View Only)</option>
-                <option value="ADMIN">Admin (Manage Data)</option>
-                <option value="SUPERUSER">Superuser (Full Control)</option>
-              </select>
-              <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none text-slate-400">
-                <Shield className="w-4 h-4" />
-              </div>
-            </div>
-            {errors.role && (
-              <p className="text-xs text-red-500">{errors.role.message}</p>
-            )}
-          </div>
-        </div>
-
-        <div className="pt-4 flex justify-end">
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2 disabled:opacity-50"
-          >
-            {isLoading ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <>
-                {initialData ? "Update User" : "Save User"}
-                {!initialData && <Plus className="w-5 h-5" />}
-              </>
-            )}
+      <form onSubmit={submit} className="space-y-6 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <label className="block space-y-2 text-sm font-semibold">Full name
+          <input className={fieldClass} value={values.name} onChange={(event) => setValues({ ...values, name: event.target.value })} required />
+        </label>
+        <label className="block space-y-2 text-sm font-semibold">Email address
+          <input className={fieldClass} type="email" value={values.email} onChange={(event) => setValues({ ...values, email: event.target.value })} required />
+        </label>
+        <label className="block space-y-2 text-sm font-semibold">{initialData ? "New password (optional)" : "Password"}
+          <input className={fieldClass} type="password" autoComplete="new-password" value={values.password} onChange={(event) => setValues({ ...values, password: event.target.value })} required={!initialData} />
+        </label>
+        <label className="block space-y-2 text-sm font-semibold">Role
+          <span className="relative block">
+            <select className={fieldClass} value={values.role} onChange={(event) => setValues({ ...values, role: event.target.value as AdminRole })}>
+              <option value="USER">User</option><option value="ADMIN">Admin</option><option value="SUPERUSER">Superuser</option>
+            </select>
+            <Shield className="pointer-events-none absolute right-4 top-3 h-4 w-4 text-slate-400" />
+          </span>
+        </label>
+        <ImageUpload
+          label="User image"
+          value={values.image ?? ""}
+          onChange={(image) => setValues({ ...values, image })}
+        />
+        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+        <div className="flex justify-end">
+          <button type="submit" disabled={isLoading} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 font-bold text-white disabled:opacity-50">
+            {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <>{initialData ? "Update User" : "Save User"}{!initialData && <Plus className="h-5 w-5" />}</>}
           </button>
         </div>
       </form>

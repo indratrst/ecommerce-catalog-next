@@ -1,10 +1,10 @@
 // src/components/ImageUpload.tsx
 "use client";
 
-import React, { useState, useRef, useTransition } from "react";
+import React, { useState, useRef } from "react";
 import { Upload, X, Loader2 } from "lucide-react";
 import Image from "next/image";
-import { UploadProductImageAction } from "@/app/actions/upload-action";
+import { imageApi } from "@/lib/api";
 
 interface ImageUploadProps {
   value: string;
@@ -14,7 +14,7 @@ interface ImageUploadProps {
 
 export function ImageUpload({ value, onChange, label }: ImageUploadProps) {
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -22,20 +22,26 @@ export function ImageUpload({ value, onChange, label }: ImageUploadProps) {
     if (!file) return;
 
     setError(null);
-    const formData = new FormData();
-    formData.append("file", file);
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Ukuran gambar maksimal 5 MB.");
+      e.target.value = "";
+      return;
+    }
 
-    // Menjalankan Server Action menggunakan transition state
-    startTransition(async () => {
-      const res = await UploadProductImageAction(formData);
-
-      if (res.success && res.publicUrl) {
-        onChange(res.publicUrl);
-      } else {
-        setError(res.error || "Failed to upload image");
-        console.error("Upload failed:", res.error);
-      }
-    });
+    setIsPending(true);
+    try {
+      const result = await imageApi.upload(file);
+      onChange(result.publicUrl);
+    } catch (uploadError) {
+      const message = uploadError instanceof Error
+        ? uploadError.message
+        : "Upload gambar gagal.";
+      setError(message);
+      console.error("Image upload failed:", uploadError);
+    } finally {
+      setIsPending(false);
+      e.target.value = "";
+    }
   };
 
   return (
@@ -55,6 +61,8 @@ export function ImageUpload({ value, onChange, label }: ImageUploadProps) {
             sizes="(max-width: 768px) 100vw, 500px"
             className="object-cover"
             priority
+            unoptimized
+            onError={() => setError("Gambar tersimpan, tetapi URL preview tidak dapat diakses.")}
           />
           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
             <button

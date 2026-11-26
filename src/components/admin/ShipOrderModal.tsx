@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useShipOrder } from "@/hooks/useOrders"; // Panggil hook baru
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Truck, X } from "lucide-react";
-import { toast } from "sonner";
+import { orderApi } from "@/lib/api";
 
 interface ShipOrderModalProps {
   isOpen: boolean;
@@ -21,32 +21,36 @@ export function ShipOrderModal({
   const [trackingNumber, setTrackingNumber] = useState("");
   const [courier, setCourier] = useState(currentCourier || "");
 
-  // Mengonsumsi mutasi dari react-query hook yang terintegrasi dengan server action
-  const { mutate: shipOrder, isPending } = useShipOrder();
+  const queryClient = useQueryClient();
+  const { mutate: shipOrder, isPending } = useMutation({
+    mutationFn: () => orderApi.updateShipment(orderId, {
+      status: "SHIPPED",
+      trackingNumber: trackingNumber.trim(),
+    }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["orders"] });
+      await queryClient.invalidateQueries({ queryKey: ["order", orderId] });
+      alert("Resi disimpan, status beralih ke SHIPPED!");
+      setTrackingNumber("");
+      onClose();
+    },
+    onError: (error) => alert(error.message),
+  });
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!trackingNumber.trim()) {
-      toast.error("Nomor resi tidak boleh kosong");
+      alert("Nomor resi tidak boleh kosong");
       return;
     }
 
-    shipOrder(
-      {
-        orderId,
-        trackingNumber,
-        shippingCourier: courier,
-      },
-      {
-        onSuccess: () => {
-          toast.success("Resi disimpan, status beralih ke SHIPPED!");
-          setTrackingNumber("");
-          onClose();
-        },
-      },
-    );
+    if (courier.trim() && courier.trim() !== currentCourier) {
+      alert("Kurir tidak dapat diubah dari CMS; ubah melalui data order.");
+      return;
+    }
+    shipOrder();
   };
 
   return (

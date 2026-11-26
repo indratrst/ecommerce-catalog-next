@@ -1,14 +1,18 @@
 "use client";
 
 import { Column, DataTable } from "@/components/admin/DataTable";
-import { useOrders } from "@/hooks/useOrders";
-import { Order } from "@/lib/validation/order.schema";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { orderApi } from "@/lib/api";
+import type { Order } from "@/types";
 
 export default function OrdersPage() {
   const router = useRouter();
-  const { data: orders } = useOrders();
+  const { data: orders = [], isLoading, error } = useQuery({
+    queryKey: ["orders"],
+    queryFn: () => orderApi.getAll(),
+  });
   const [paymentFilter, setPaymentFilter] = useState("ALL");
   const [fulfillmentFilter, setFulfillmentFilter] = useState("ALL");
 
@@ -182,9 +186,11 @@ export default function OrdersPage() {
       <DataTable
         columns={columns}
         data={filteredOrders}
+        isLoading={isLoading}
         searchPlaceholder="Cari nama pelanggan, status, ID order..."
         onEdit={(item) => router.push(`/admin/orders/${item.id}/detail/`)}
       />
+      {error && <p role="alert" className="text-sm text-red-600">{error.message}</p>}
     </div>
   );
 }

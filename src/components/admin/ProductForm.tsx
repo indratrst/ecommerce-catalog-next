@@ -1,420 +1,186 @@
 "use client";
 
-import { useForm, useFieldArray, useWatch } from "react-hook-form";
-import { standardSchemaResolver } from "@hookform/resolvers/standard-schema";
-import { Loader2, Plus, ArrowLeft, Trash2, Box, Info } from "lucide-react";
+import { useState } from "react";
 import Link from "next/link";
+import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
+import type { AdminProductFormValues, Category } from "@/types";
 import { ImageUpload } from "./ImageUpload";
-import { CategoryResponse } from "@/lib/validation/category.schema";
-import type { FieldErrors } from "react-hook-form";
-import {
-  CreateProduct,
-  CreateProductSchema,
-  ProductVariant,
-} from "@/lib/validation/products.schema";
-import { useEffect } from "react";
 
-// ─── Props ───────────────────────────────────────────────────
+type ProductFormVariant = AdminProductFormValues["variants"][number];
+type ProductFormInitialData = Omit<Partial<AdminProductFormValues>, "variants" | "image"> & {
+  image?: string | null;
+  variants?: Array<{
+    id?: string;
+    size?: string | null;
+    stock: number;
+    color?: string | null;
+    isActive?: boolean;
+  }>;
+};
 
 interface ProductFormProps {
-  initialData?: {
-    title?: string;
-    price?: number;
-    originalPrice?: number | null; // MENAMBAHKAN: Handle tipe originalPrice
-    description?: string;
-    image?: string;
-    categoryId?: string | number;
-    variants?: ProductVariant[];
-  };
-  onSubmit: (data: CreateProduct) => Promise<void>;
+  initialData?: ProductFormInitialData;
+  categories?: Category[];
+  onSubmit: (data: AdminProductFormValues) => Promise<unknown>;
   isLoading?: boolean;
-  categories?: CategoryResponse[];
 }
+
+const fieldClass =
+  "w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 dark:border-slate-700 dark:bg-slate-800 dark:text-white";
 
 export function ProductForm({
   initialData,
+  categories = [],
   onSubmit,
   isLoading,
-  categories,
 }: ProductFormProps) {
-  // ── React Hook Form ──────────────────────────────────────
-  const {
-    register,
-    handleSubmit,
-    control,
-    setValue,
-    formState: { errors },
-  } = useForm<CreateProduct>({
-    resolver: standardSchemaResolver(
-      CreateProductSchema,
-    ) as import("react-hook-form").Resolver<CreateProduct>,
-    defaultValues: {
-      title: initialData?.title || "",
-      originalPrice: initialData?.originalPrice || null, // MENAMBAHKAN: default value harga coret
-      price: initialData?.price || 0,
-      description: initialData?.description || "",
-      image: initialData?.image || "",
-      categoryId: String(initialData?.categoryId ?? ""),
-      variants: initialData?.variants
-        ?.filter((v: ProductVariant) => v.isActive)
-        .map((v: ProductVariant) => ({
-          id: v.id,
-          size: v.size,
-          stock: v.stock,
-          color: v.color || "",
-        })) || [{ size: "One Size", stock: 0, color: "" }],
-    },
+  const [values, setValues] = useState<AdminProductFormValues>({
+    categoryId: initialData?.categoryId ?? categories[0]?.id ?? "",
+    title: initialData?.title ?? "",
+    price: initialData?.price ?? 0,
+    originalPrice: initialData?.originalPrice ?? null,
+    description: initialData?.description ?? "",
+    image: initialData?.image ?? "",
+    variants: initialData?.variants?.length
+      ? initialData.variants.map((variant) => ({
+          id: variant.id,
+          size: variant.size ?? "",
+          stock: variant.stock,
+          color: variant.color ?? "",
+          isActive: variant.isActive,
+        }))
+      : [{ size: "One Size", stock: 0, color: "" }],
   });
+  const [error, setError] = useState("");
 
-  const watchedImage = useWatch({ control, name: "image" });
-  const watchedVariants = useWatch({ control, name: "variants" });
-  const watchedCategoryId = useWatch({ control, name: "categoryId" });
-
-  // ── Fetch Categories ─────────────────────────────────────
-
-  useEffect(() => {
-    if (
-      categories &&
-      categories.length > 0 &&
-      !initialData &&
-      !watchedCategoryId
-    ) {
-      setValue("categoryId", String(categories[0].id));
-    }
-  }, [categories, initialData, setValue, watchedCategoryId]);
-
-  const { fields, append, remove } = useFieldArray({
-    control,
-    name: "variants",
-  });
-
-  if (!categories && !initialData) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-      </div>
-    );
-  }
-
-  // ── Variant Helpers ──────────────────────────────────────
-  const addVariant = () => {
-    append({ size: "", stock: 0, color: "" });
+  const updateVariant = (
+    index: number,
+    changes: Partial<ProductFormVariant>,
+  ) => {
+    setValues((current) => ({
+      ...current,
+      variants: current.variants.map((variant, variantIndex) =>
+        variantIndex === index ? { ...variant, ...changes } : variant,
+      ),
+    }));
   };
 
   const removeVariant = (index: number) => {
-    const current = watchedVariants[index];
-    if (current?.id) {
-      setValue(`variants.${index}.isDeleted`, true);
-    } else {
-      remove(index);
+    setValues((current) => ({
+      ...current,
+      variants: current.variants.filter((_, variantIndex) => variantIndex !== index),
+    }));
+  };
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    if (!values.categoryId || !values.title.trim() || values.price <= 0) {
+      setError("Isi kategori, nama produk, dan harga yang valid.");
+      return;
+    }
+    if (
+      values.variants.some(
+        (variant) => !variant.size.trim() || variant.stock < 0,
+      )
+    ) {
+      setError("Setiap varian harus memiliki ukuran dan stok yang valid.");
+      return;
+    }
+    try {
+      await onSubmit({
+        ...values,
+        title: values.title.trim(),
+        description: values.description.trim(),
+        image: values.image?.trim() || null,
+        variants: values.variants.map((variant) => ({
+          ...variant,
+          size: variant.size.trim(),
+          color: variant.color?.trim() || null,
+        })),
+      });
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : "Gagal menyimpan produk.",
+      );
     }
   };
 
-  const visibleCount = watchedVariants.filter((v) => !v.isDeleted).length;
-
-  const onFormSubmit = (data: CreateProduct) => {
-    onSubmit(data);
-  };
-
-  const onFormError = (errors: FieldErrors<CreateProduct>) => {
-    console.log("❌ Validation errors:", errors);
-  };
-
   return (
-    <div className="max-w-5xl mx-auto pb-20">
-      <div className="flex items-center gap-4 mb-8">
-        <Link
-          href="/admin/products"
-          className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-        >
-          <ArrowLeft className="w-5 h-5" />
+    <div className="mx-auto max-w-5xl pb-20">
+      <div className="mb-8 flex items-center gap-4">
+        <Link href="/admin/products" className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <ArrowLeft className="h-5 w-5" />
         </Link>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white uppercase tracking-tight">
+        <h2 className="text-2xl font-bold uppercase tracking-tight text-slate-900 dark:text-white">
           {initialData ? "Edit Product" : "New Product"}
         </h2>
       </div>
-
-      <form
-        onSubmit={handleSubmit(onFormSubmit, onFormError)}
-        className="grid grid-cols-1 lg:grid-cols-3 gap-8"
-      >
-        {/* ═══ Main Info ═══ */}
-        <div className="lg:col-span-2 space-y-8">
-          <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-            <h3 className="text-lg font-bold flex items-center gap-2 text-indigo-600">
-              <Info className="w-5 h-5" />
-              General Information
-            </h3>
-
-            {/* Title */}
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
-                Product Title
-              </label>
-              <input
-                {...register("title")}
-                placeholder="e.g. Classic Logo T-Shirt"
-                className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all ${
-                  errors.title
-                    ? "border-red-500 focus:ring-red-500"
-                    : "border-slate-200 dark:border-slate-700"
-                }`}
-              />
-              {errors.title && (
-                <p className="text-xs text-red-500">{errors.title.message}</p>
-              )}
-            </div>
-
-            {/* MODIFIKASI: Section Harga Jual vs Harga Coret (Diskon) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
-                  Selling Price (IDR)
-                </label>
-                <input
-                  {...register("price", { valueAsNumber: true })}
-                  type="number"
-                  placeholder="0"
-                  className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all ${
-                    errors.price
-                      ? "border-red-500 focus:ring-red-500"
-                      : "border-slate-200 dark:border-slate-700"
-                  }`}
-                />
-                {errors.price && (
-                  <p className="text-xs text-red-500">{errors.price.message}</p>
-                )}
-              </div>
-
-              {/* MENAMBAHKAN: Input Field untuk Original Price (Harga Coret) */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
-                    Original Price / Strike Price (IDR)
-                  </label>
-                  <span className="text-[10px] text-slate-400 font-medium lowercase italic">
-                    Opsional
-                  </span>
-                </div>
-                <input
-                  {...register("originalPrice", { valueAsNumber: true })}
-                  type="number"
-                  placeholder="e.g. 150000 (Biarkan kosong jika tidak diskon)"
-                  className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all ${
-                    errors.originalPrice
-                      ? "border-red-500 focus:ring-red-500"
-                      : "border-slate-200 dark:border-slate-700"
-                  }`}
-                />
-                {errors.originalPrice && (
-                  <p className="text-xs text-red-500">
-                    {errors.originalPrice.message}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* MODIFIKASI: Dropdown Kategori dipindah ke bawah baris harga */}
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
-                Category
-              </label>
-              <select
-                {...register("categoryId")}
-                value={watchedCategoryId || ""}
-                onChange={(e) => setValue("categoryId", e.target.value)}
-                className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all appearance-none ${
-                  errors.categoryId
-                    ? "border-red-500 focus:ring-red-500"
-                    : "border-slate-200 dark:border-slate-700"
-                }`}
-              >
-                <option value="" disabled>
-                  {!categories ? "Loading categories..." : "Select a category"}
-                </option>
-                {categories?.map((cat) => (
-                  <option key={cat.id} value={String(cat.id)}>
-                    {cat.name}
-                  </option>
-                ))}
-              </select>
-              {errors.categoryId && (
-                <p className="text-xs text-red-500">
-                  {errors.categoryId.message}
-                </p>
-              )}
-            </div>
-
-            {/* Description */}
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
-                Description
-              </label>
-              <textarea
-                {...register("description")}
-                rows={6}
-                placeholder="Product details and specifications..."
-                className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all resize-none ${
-                  errors.description
-                    ? "border-red-500 focus:ring-red-500"
-                    : "border-slate-200 dark:border-slate-700"
-                }`}
-              />
-              {errors.description && (
-                <p className="text-xs text-red-500">
-                  {errors.description.message}
-                </p>
-              )}
-            </div>
+      <form onSubmit={submit} className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+        <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900 lg:col-span-2">
+          <label className="block space-y-2 text-sm font-semibold">
+            Product title
+            <input className={fieldClass} value={values.title} onChange={(event) => setValues({ ...values, title: event.target.value })} required />
+          </label>
+          <div className="grid gap-6 sm:grid-cols-2">
+            <label className="block space-y-2 text-sm font-semibold">
+              Price (IDR)
+              <input className={fieldClass} type="number" min="1" value={values.price} onChange={(event) => setValues({ ...values, price: Number(event.target.value) })} required />
+            </label>
+            <label className="block space-y-2 text-sm font-semibold">
+              Original price (optional)
+              <input className={fieldClass} type="number" min="1" value={values.originalPrice ?? ""} onChange={(event) => setValues({ ...values, originalPrice: event.target.value ? Number(event.target.value) : null })} />
+            </label>
           </div>
-
-          {/* ═══ Variants ═══ */}
-          <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold flex items-center gap-2 text-indigo-600">
-                <Box className="w-5 h-5" />
-                Inventory & Variants
-              </h3>
-              <button
-                type="button"
-                onClick={addVariant}
-                className="text-xs font-bold uppercase tracking-widest text-indigo-600 hover:text-indigo-500 flex items-center gap-1"
-              >
-                <Plus className="w-4 h-4" />
-                Add Variant
-              </button>
-            </div>
-
-            {errors.variants?.root && (
-              <p className="text-xs text-red-500">
-                {errors.variants.root.message}
-              </p>
-            )}
-
-            <div className="space-y-4">
-              {fields.map((field, index) => {
-                if (watchedVariants[index]?.isDeleted) return null;
-
-                return (
-                  <div
-                    key={field.id}
-                    className="grid grid-cols-1 sm:grid-cols-4 gap-4 p-4 rounded-xl border border-slate-100 dark:border-slate-800 relative group"
-                  >
-                    <input
-                      type="hidden"
-                      {...register(`variants.${index}.id`)}
-                    />
-
-                    {/* Size */}
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        Size
-                      </label>
-                      <input
-                        {...register(`variants.${index}.size`)}
-                        placeholder="e.g. M"
-                        className={`w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-lg text-xs dark:text-white ${
-                          errors.variants?.[index]?.size
-                            ? "border-red-500"
-                            : "border-slate-200 dark:border-slate-700"
-                        }`}
-                      />
-                      {errors.variants?.[index]?.size && (
-                        <p className="text-[10px] text-red-500">
-                          {errors.variants[index].size.message}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Color */}
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        Color
-                      </label>
-                      <input
-                        {...register(`variants.${index}.color`)}
-                        placeholder="Optional"
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white"
-                      />
-                    </div>
-
-                    {/* Stock */}
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        Stock
-                      </label>
-                      <input
-                        {...register(`variants.${index}.stock`, {
-                          valueAsNumber: true,
-                        })}
-                        type="number"
-                        placeholder="0"
-                        className={`w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-lg text-xs dark:text-white ${
-                          errors.variants?.[index]?.stock
-                            ? "border-red-500"
-                            : "border-slate-200 dark:border-slate-700"
-                        }`}
-                      />
-                      {errors.variants?.[index]?.stock && (
-                        <p className="text-[10px] text-red-500">
-                          {errors.variants[index].stock.message}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Delete button */}
-                    <div className="flex items-end justify-end">
-                      {visibleCount > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeVariant(index)}
-                          className="p-2 text-slate-300 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/10 transition-all opacity-0 group-hover:opacity-100"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* ═══ Sidebar / Media ═══ */}
-        <div className="space-y-8">
-          <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+          <label className="block space-y-2 text-sm font-semibold">
+            Category
+            <select className={fieldClass} value={values.categoryId} onChange={(event) => setValues({ ...values, categoryId: event.target.value })} required>
+              <option value="">Select a category</option>
+              {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
+          </label>
+          <label className="block space-y-2 text-sm font-semibold">
+            Description
+            <textarea className={fieldClass} rows={5} value={values.description} onChange={(event) => setValues({ ...values, description: event.target.value })} required />
+          </label>
+          <div className="space-y-3">
             <ImageUpload
-              value={watchedImage ?? ""}
-              label="Product Image"
-              onChange={(url) => setValue("image", url)}
+              label="Product image"
+              value={values.image ?? ""}
+              onChange={(image) => setValues({ ...values, image })}
             />
+            <label className="block space-y-2 text-sm font-semibold">
+              Or enter image URL
+              <input className={fieldClass} type="url" value={values.image ?? ""} onChange={(event) => setValues({ ...values, image: event.target.value })} />
+            </label>
           </div>
-
-          <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6 sticky top-24">
-            <div className="space-y-4">
-              <h4 className="text-sm font-bold uppercase text-slate-400 tracking-widest">
-                Actions
-              </h4>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {isLoading ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <>{initialData ? "Update Product" : "Publish Product"}</>
-                )}
+          <section className="space-y-4 border-t border-slate-200 pt-6 dark:border-slate-700">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-indigo-600">Inventory &amp; Variants</h3>
+              <button type="button" className="flex items-center gap-1 text-sm font-bold text-indigo-600" onClick={() => setValues({ ...values, variants: [...values.variants, { size: "", stock: 0, color: "" }] })}>
+                <Plus className="h-4 w-4" /> Add variant
               </button>
-
-              <Link
-                href="/admin/products"
-                className="w-full py-4 flex items-center justify-center text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-              >
-                Cancel
-              </Link>
             </div>
+            {values.variants.map((variant, index) => (
+              <div key={variant.id ?? index} className="grid gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-4 dark:border-slate-700">
+                <input className={fieldClass} aria-label="Size" placeholder="Size" value={variant.size} onChange={(event) => updateVariant(index, { size: event.target.value })} required />
+                <input className={fieldClass} aria-label="Color" placeholder="Color" value={variant.color ?? ""} onChange={(event) => updateVariant(index, { color: event.target.value })} />
+                <input className={fieldClass} aria-label="Stock" type="number" min="0" placeholder="Stock" value={variant.stock} onChange={(event) => updateVariant(index, { stock: Number(event.target.value) })} required />
+                <button type="button" aria-label="Remove variant" disabled={values.variants.length <= 1} className="flex items-center justify-center text-red-500 disabled:opacity-30" onClick={() => removeVariant(index)}>
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </section>
+          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+          <div className="flex justify-end gap-3">
+            <Link href="/admin/products" className="rounded-xl px-5 py-3 text-sm font-bold text-slate-500">Cancel</Link>
+            <button type="submit" disabled={isLoading || categories.length === 0} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 font-bold text-white disabled:opacity-50">
+              {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {initialData ? "Update product" : "Publish product"}
+            </button>
           </div>
         </div>
       </form>

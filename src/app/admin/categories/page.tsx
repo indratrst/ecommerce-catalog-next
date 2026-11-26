@@ -1,13 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Column, DataTable } from "@/components/admin/DataTable";
 import { DeleteModal } from "@/components/admin/DeleteModal";
 import { Package, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCategories, useDeleteCategory } from "@/hooks/useCategories";
-import { CategoryWithCount } from "@/lib/validation/category.schema";
+import { useCategories } from "@/hooks/useCategories";
+import { useProducts } from "@/hooks/useProducts";
+import { categoryApi } from "@/lib/api";
+import type { Category } from "@/types";
 import Image from "next/image";
 
 export default function CategoriesPage() {
@@ -15,19 +18,28 @@ export default function CategoriesPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const { data: categories, isLoading: categoryLoading } = useCategories();
+  const { data: products = [] } = useProducts();
+  const queryClient = useQueryClient();
 
-  const deleteCategory = useDeleteCategory();
-  const isDeleting = deleteCategory.isPending;
+  const deleteCategory = useMutation({
+    mutationFn: categoryApi.delete,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["categories"] }),
+  });
   const handleDelete = async () => {
     if (!deleteId) return;
-    deleteCategory.mutate(deleteId, {
-      onSuccess: () => {
-        setDeleteId(null);
-        // fetchCategories(); // atau invalidate query
-      },
-    });
+    try {
+      await deleteCategory.mutateAsync(deleteId);
+      setDeleteId(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to delete category.");
+    }
   };
 
+  type CategoryWithCount = Category & { _count: { products: number } };
+  const categoriesWithCount: CategoryWithCount[] = (categories ?? []).map((category) => ({
+    ...category,
+    _count: { products: products.filter((product) => product.categoryId === category.id).length },
+  }));
   const columns: Column<CategoryWithCount>[] = [
     {
       key: "image",
@@ -40,6 +52,8 @@ export default function CategoriesPage() {
                 src={image}
                 fill
                 alt={item.name}
+                priority
+            unoptimized
                 className="object-cover"
               />
             ) : (
@@ -101,10 +115,12 @@ export default function CategoriesPage() {
 
       <DataTable
         columns={columns}
-        data={categories}
+        data={categoriesWithCount}
         isLoading={categoryLoading}
         onEdit={(item) => router.push(`/admin/categories/${item.id}/edit`)}
-        onDelete={(item) => setDeleteId(item.id)}
+        onDelete={(item) => {
+          if (item.id) setDeleteId(item.id);
+        }}
         searchPlaceholder="Filter categories by name..."
       />
 
@@ -112,7 +128,7 @@ export default function CategoriesPage() {
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
-        isLoading={isDeleting}
+        isLoading={deleteCategory.isPending}
         title="Delete Category"
         description="Are you sure you want to delete this category? Products associated with this category might need to be reassigned."
       />

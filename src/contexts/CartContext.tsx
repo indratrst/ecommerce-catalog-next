@@ -1,12 +1,12 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { Product, CartItem } from "@/types";
+import { Product, CartItem, ProductVariant } from "@/types";
 import { useCartStore } from "@/store/useCartStore";
 
 interface CartContextType {
   cart: CartItem[];
-  addToCart: (product: Product, quantity?: number) => void;
+  addToCart: (product: Product, quantity?: number, variant?: ProductVariant) => void;
   removeFromCart: (productId: string | number) => void;
   updateQuantity: (productId: string | number, quantity: number) => void;
   clearCart: () => void;
@@ -30,8 +30,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     store.setCartOpen(isOpen);
   };
 
-  const addToCart = (product: Product, quantity = 1) => {
-    store.addItem(product, quantity);
+  const addToCart = (product: Product, quantity = 1, variant?: ProductVariant) => {
+    store.addItem(product, quantity, variant);
   };
 
   const removeFromCart = (productId: string | number) => {
@@ -78,4 +78,3 @@ export function useCart() {
   }
   return context;
 }
-

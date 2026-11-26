@@ -1,40 +1,39 @@
 "use client";
 
-import { CategoryForm } from "@/components/admin/CategoryForm";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { useCategory, useUpdateCategory } from "@/hooks/useCategories";
-import { UpdateCategory } from "@/lib/validation/category.schema";
+import { CategoryForm } from "@/components/admin/CategoryForm";
+import { categoryApi } from "@/lib/api";
+import type { AdminCategoryFormValues } from "@/types";
 
 export default function EditCategoryPage() {
-  const params = useParams();
+  const params = useParams<{ id: string }>();
   const router = useRouter();
-  const categoryId = params.id as string;
+  const queryClient = useQueryClient();
+  const categoryId = params.id;
+  const { data: category, isLoading, error } = useQuery({
+    queryKey: ["category", categoryId],
+    queryFn: () => categoryApi.getById(categoryId),
+  });
+  const updateCategory = useMutation({
+    mutationFn: (payload: AdminCategoryFormValues) => categoryApi.update(categoryId, payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["categories"] });
+      await queryClient.invalidateQueries({ queryKey: ["category", categoryId] });
+      router.push("/admin/categories");
+    },
+  });
 
-  const { data: category, isLoading: categoryLoading } =
-    useCategory(categoryId);
-
-  const updateCategory = useUpdateCategory();
-  const handleSubmit = async (data: UpdateCategory) => {
-    await updateCategory.mutateAsync({ id: categoryId, data });
-    router.push("/admin/categories");
-  };
-
-  if (categoryLoading) {
-    return (
-      <div className="flex items-center justify-center p-20">
-        <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
-      </div>
-    );
-  }
-
-  if (!category) return <div>Category not found</div>;
+  if (isLoading) return <div className="flex justify-center p-20"><Loader2 className="h-10 w-10 animate-spin text-indigo-600" /></div>;
+  if (error) return <p role="alert" className="p-8 text-red-600">{error.message}</p>;
+  if (!category) return <p className="p-8">Category not found.</p>;
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
       <CategoryForm
-        initialData={category || []}
-        onSubmit={handleSubmit}
+        initialData={category}
+        onSubmit={(data) => updateCategory.mutateAsync(data)}
         isLoading={updateCategory.isPending}
       />
     </div>
