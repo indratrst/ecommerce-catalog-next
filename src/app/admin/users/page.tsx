@@ -1,123 +1,135 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { DataTable } from "@/components/admin/DataTable";
+import { useState } from "react";
+import { Column, DataTable } from "@/components/admin/DataTable";
 import { DeleteModal } from "@/components/admin/DeleteModal";
 import { UserForm } from "@/components/admin/UserForm";
-import { Plus, Users, Shield, ShieldCheck, ShieldAlert, X } from "lucide-react";
-import { ApiError, adminUserApi } from "@/lib/api";
-import { AdminRole, AdminUser, AdminUserFormValues } from "@/types";
+import { Plus, Shield, ShieldCheck, ShieldAlert, X } from "lucide-react";
+import {
+  useCreateUser,
+  useDeleteUser,
+  useUpdateUser,
+  useUsers,
+} from "@/hooks/useUsers";
+import {
+  CreateUser,
+  UpdateUser,
+  UserResponse,
+} from "@/lib/validation/users.schema";
+import { toast } from "sonner";
+import { LucideIcon } from "lucide-react";
 
 export default function UsersPage() {
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { data: users = [], isLoading } = useUsers();
+  const createUser = useCreateUser();
+  const updateUser = useUpdateUser();
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  
+
   // Modal for creating/editing users
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+  const [editingUser, setEditingUser] = useState<UserResponse | null>(null);
   const [formLoading, setFormLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
 
-  async function fetchUsers() {
-    try {
-      const nextUsers = await adminUserApi.getAll();
-      setUsers(nextUsers);
-      setErrorMessage("");
-    } catch (error) {
-      console.error("Failed to fetch users:", error);
-      setErrorMessage(error instanceof ApiError ? error.message : "Gagal memuat pengguna dari server.");
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    let active = true;
-    adminUserApi.getAll()
-      .then((nextUsers) => {
-        if (active) setUsers(nextUsers);
-      })
-      .catch((error: unknown) => {
-        console.error("Failed to fetch users:", error);
-        if (active) {
-          setErrorMessage(error instanceof ApiError ? error.message : "Gagal memuat pengguna dari server.");
-        }
-      })
-      .finally(() => {
-        if (active) setIsLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+  const deleteUser = useDeleteUser();
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    setIsDeleting(true);
-    setErrorMessage("");
-    try {
-      await adminUserApi.delete(deleteId);
-      setUsers((current) => current.filter((user) => user.id !== deleteId));
-      setDeleteId(null);
-    } catch (error) {
-      console.error("Failed to delete user:", error);
-      setErrorMessage(error instanceof ApiError ? error.message : "Gagal menghapus pengguna.");
-    } finally {
-      setIsDeleting(false);
-    }
+    // setIsDeleting(true);
+    // try {
+    //   const res = await fetch(`/api/users/${deleteId}`, {
+    //     method: "DELETE",
+    //   });
+    //   if (res.ok) {
+    //     // Refetch data setelah delete
+    //     await refetch();
+    //     setDeleteId(null);
+    //   }
+    deleteUser.mutate(deleteId, {
+      onSuccess: () => {
+        setDeleteId(null);
+        // fetchCategories(); // atau invalidate query
+      },
+    });
   };
 
-  const handleFormSubmit = async (data: AdminUserFormValues) => {
+  const handleSubmit = async (data: CreateUser | UpdateUser) => {
     setFormLoading(true);
-    setErrorMessage("");
     try {
-      const payload = {
-        name: data.name,
-        email: data.email,
-        role: data.role,
-        ...(data.password ? { password: data.password } : {}),
-      };
       if (editingUser) {
-        await adminUserApi.update(editingUser.id, payload);
+        if (!editingUser.id) {
+          toast("Cannot update user: Missing user ID");
+          return;
+        }
+        // Mode update
+        const updateData: Partial<UpdateUser> = {
+          name: data.name,
+          email: data.email,
+          role: data.role,
+          // tambahkan field lain yang perlu diupdate
+        };
+        await updateUser.mutateAsync({ id: editingUser.id, data: updateData });
       } else {
-        await adminUserApi.create({ ...payload, password: data.password });
+        // Mode create
+        await createUser.mutateAsync(data as CreateUser);
       }
       setIsModalOpen(false);
       setEditingUser(null);
-      await fetchUsers();
-    } catch (error) {
-      console.error("User action failed:", error);
-      setErrorMessage(error instanceof ApiError ? error.message : "Gagal menyimpan pengguna.");
+      // Data akan otomatis refetch karena onSuccess di hook sudah handle invalidateQueries
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred.";
+      toast(message);
     } finally {
       setFormLoading(false);
     }
   };
 
-  const columns = [
+  type RoleConfig = {
+    bg: string;
+    text: string;
+    icon: LucideIcon;
+  };
+
+  const roleConfig: Record<UserResponse["role"], RoleConfig> = {
+    SUPERUSER: {
+      bg: "bg-purple-100",
+      text: "text-purple-700",
+      icon: ShieldCheck,
+    },
+    ADMIN: { bg: "bg-blue-100", text: "text-blue-700", icon: Shield },
+    USER: {
+      bg: "bg-slate-100",
+      text: "text-slate-700",
+      icon: ShieldAlert,
+    },
+  };
+
+  const columns: Column<UserResponse>[] = [
     {
       key: "name",
       label: "Name",
-      render: (name: string, item: AdminUser) => (
+      render: (name, item) => (
         <div className="flex flex-col">
-          <span className="font-bold text-slate-900 dark:text-white">{name}</span>
-          <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">{item.email}</span>
+          <span className="font-bold text-slate-900 dark:text-white">
+            {name}
+          </span>
+          <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+            {item.email}
+          </span>
         </div>
       ),
     },
     {
       key: "role",
       label: "Role",
-      render: (role: AdminRole) => {
-        const config: Record<AdminRole, { bg: string; text: string; icon: typeof Shield }> = {
-          SUPERUSER: { bg: "bg-purple-100", text: "text-purple-700", icon: ShieldCheck },
-          ADMIN: { bg: "bg-blue-100", text: "text-blue-700", icon: Shield },
-          USER: { bg: "bg-slate-100", text: "text-slate-700", icon: ShieldAlert },
-        };
-        const { bg, text, icon: Icon } = config[role] || config.USER;
+      render: (role) => {
+        const { bg, text, icon: Icon } = roleConfig[role] || roleConfig.USER;
         return (
-          <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${bg} ${text}`}>
+          <div
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${bg} ${text}`}
+          >
             <Icon className="w-3.5 h-3.5" />
             {role}
           </div>
@@ -127,7 +139,7 @@ export default function UsersPage() {
     {
       key: "createdAt",
       label: "Joined",
-      render: (date: string) => (
+      render: (date) => (
         <span className="text-xs text-slate-500 dark:text-slate-400 font-medium italic">
           {new Date(date).toLocaleDateString()}
         </span>
@@ -142,7 +154,9 @@ export default function UsersPage() {
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white uppercase tracking-tight">
             User Management
           </h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1 font-medium">Manage access and permissions for your staff.</p>
+          <p className="text-slate-500 dark:text-slate-400 mt-1 font-medium">
+            Manage access and permissions for your staff.
+          </p>
         </div>
         <button
           onClick={() => {
@@ -168,32 +182,21 @@ export default function UsersPage() {
         searchPlaceholder="Filter users by name, email..."
       />
 
-      {errorMessage && (
-        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {errorMessage}
-        </p>
-      )}
-
       {/* User Form Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto">
           <div className="bg-slate-50 dark:bg-slate-950 w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl overflow-y-auto relative animate-in zoom-in-95 duration-200 scrollbar-hide">
-            <button 
+            <button
               onClick={() => setIsModalOpen(false)}
               className="absolute top-6 right-6 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all shadow-sm z-10"
             >
               <X className="w-5 h-5" />
             </button>
             <div className="p-8">
-              {errorMessage && (
-                <p role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {errorMessage}
-                </p>
-              )}
-              <UserForm 
-                initialData={editingUser} 
-                onSubmit={handleFormSubmit} 
-                isLoading={formLoading} 
+              <UserForm
+                initialData={editingUser}
+                onSubmit={handleSubmit}
+                isLoading={formLoading}
               />
             </div>
           </div>
@@ -204,7 +207,7 @@ export default function UsersPage() {
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
-        isLoading={isDeleting}
+        isLoading={deleteUser.isPending}
         title="Revoke Access"
         description="Are you sure you want to remove this user? They will lose all access to the CMS immediately."
       />

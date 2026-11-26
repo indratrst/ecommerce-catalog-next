@@ -1,69 +1,57 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { DataTable } from "@/components/admin/DataTable";
+import { useState } from "react";
+import { Column, DataTable } from "@/components/admin/DataTable";
 import { DeleteModal } from "@/components/admin/DeleteModal";
-import { Plus, Tag } from "lucide-react";
+import { Package, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ApiError, categoryApi } from "@/lib/api";
-import { Category } from "@/types";
+import { useCategories, useDeleteCategory } from "@/hooks/useCategories";
+import { CategoryWithCount } from "@/lib/validation/category.schema";
+import Image from "next/image";
 
 export default function CategoriesPage() {
   const router = useRouter();
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
 
-  useEffect(() => {
-    let active = true;
-    categoryApi.getAll()
-      .then((data) => {
-        if (active) setCategories(data);
-      })
-      .catch((error: unknown) => {
-        console.error("Failed to fetch categories:", error);
-        if (active) {
-          setErrorMessage(error instanceof ApiError ? error.message : "Gagal memuat kategori dari server.");
-        }
-      })
-      .finally(() => {
-        if (active) setIsLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+  const { data: categories, isLoading: categoryLoading } = useCategories();
 
+  const deleteCategory = useDeleteCategory();
+  const isDeleting = deleteCategory.isPending;
   const handleDelete = async () => {
     if (!deleteId) return;
-    setIsDeleting(true);
-    setErrorMessage("");
-    try {
-      await categoryApi.delete(deleteId);
-      setCategories((current) => current.filter((category) => String(category.id) !== deleteId));
-      setDeleteId(null);
-    } catch (error) {
-      console.error("Failed to delete category:", error);
-      setErrorMessage(error instanceof ApiError ? error.message : "Gagal menghapus kategori.");
-    } finally {
-      setIsDeleting(false);
-    }
+    deleteCategory.mutate(deleteId, {
+      onSuccess: () => {
+        setDeleteId(null);
+        // fetchCategories(); // atau invalidate query
+      },
+    });
   };
 
-  const columns = [
+  const columns: Column<CategoryWithCount>[] = [
     {
-      key: "name",
+      key: "image",
       label: "Category Name",
-      render: (name: string, item: Category) => (
+      render: (image, item) => (
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-            <Tag className="w-5 h-5" />
+          <div className="relative w-12 h-12 rounded-xl bg-slate-100 overflow-hidden shrink-0">
+            {image ? (
+              <Image
+                src={image}
+                fill
+                alt={item.name}
+                className="object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-slate-200">
+                <Package className="w-6 h-6 text-slate-400" />
+              </div>
+            )}
           </div>
           <div>
-            <p className="font-bold text-slate-900 dark:text-white">{name}</p>
+            <p className="font-bold text-slate-900 dark:text-white">
+              {item.name}
+            </p>
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none mt-0.5">
               /{item.slug}
             </p>
@@ -74,8 +62,19 @@ export default function CategoriesPage() {
     {
       key: "description",
       label: "Description",
-      render: (desc: string) => (
-        <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-1 max-w-xs">{desc || "No description"}</p>
+      render: (desc) => (
+        <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-1 max-w-xs">
+          {desc || "No description"}
+        </p>
+      ),
+    },
+    {
+      key: "_count",
+      label: "Products",
+      render: (count) => (
+        <span className="font-bold text-slate-900 dark:text-white">
+          {count?.products || 0} items
+        </span>
       ),
     },
   ];
@@ -87,7 +86,9 @@ export default function CategoriesPage() {
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white uppercase tracking-tight">
             Categories
           </h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1 font-medium">Organize your products into logical groups.</p>
+          <p className="text-slate-500 dark:text-slate-400 mt-1 font-medium">
+            Organize your products into logical groups.
+          </p>
         </div>
         <Link
           href="/admin/categories/new"
@@ -101,17 +102,11 @@ export default function CategoriesPage() {
       <DataTable
         columns={columns}
         data={categories}
-        isLoading={isLoading}
+        isLoading={categoryLoading}
         onEdit={(item) => router.push(`/admin/categories/${item.id}/edit`)}
-        onDelete={(item) => setDeleteId(String(item.id))}
+        onDelete={(item) => setDeleteId(item.id)}
         searchPlaceholder="Filter categories by name..."
       />
-
-      {errorMessage && (
-        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {errorMessage}
-        </p>
-      )}
 
       <DeleteModal
         isOpen={!!deleteId}

@@ -1,79 +1,74 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { DataTable } from "@/components/admin/DataTable";
+import { useState } from "react";
+import { Column, DataTable } from "@/components/admin/DataTable";
 import { DeleteModal } from "@/components/admin/DeleteModal";
 import { Plus, Package, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { ApiError, productApi } from "@/lib/api";
-import { Product } from "@/types";
+import { useDeleteProduct, useProducts } from "@/hooks/useProducts";
+import {
+  ProductResponse,
+  VariantResponse,
+} from "@/lib/validation/products.schema";
+import { ErrorSchema } from "@/types";
+
+type ProductWithCategory = ProductResponse & {
+  category?: {
+    id: string;
+    name: string;
+  };
+};
 
 export default function ProductsPage() {
   const router = useRouter();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [isDeleting] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    async function loadProducts() {
-      try {
-        const firstPage = await productApi.getAll({ page: 1, limit: 100 });
-        const remainingPages = await Promise.all(
-          Array.from({ length: Math.max(0, firstPage.totalPages - 1) }, (_, index) =>
-            productApi.getAll({ page: index + 2, limit: 100 })
-          )
-        );
-        if (active) {
-          setProducts([
-            ...firstPage.data,
-            ...remainingPages.flatMap((page) => page.data),
-          ]);
-        }
-      } catch (error) {
-        console.error("Failed to fetch products:", error);
-        if (active) {
-          setErrorMessage(error instanceof ApiError ? error.message : "Gagal memuat produk dari server.");
-        }
-      } finally {
-        if (active) setIsLoading(false);
-      }
-    }
-    void Promise.resolve().then(loadProducts);
-    return () => {
-      active = false;
-    };
-  }, []);
+  const { data: products, isLoading } = useProducts();
 
+  const deleteProduct = useDeleteProduct();
   const handleDelete = async () => {
     if (!deleteId) return;
-    setIsDeleting(true);
-    setErrorMessage("");
-    try {
-      await productApi.delete(deleteId);
-      setProducts((current) => current.filter((product) => product.id !== deleteId));
-      setDeleteId(null);
-    } catch (error) {
-      console.error("Failed to delete product:", error);
-      setErrorMessage(error instanceof ApiError ? error.message : "Gagal menghapus produk.");
-    } finally {
-      setIsDeleting(false);
-    }
+
+    deleteProduct.mutate(deleteId, {
+      onSuccess: () => {
+        setDeleteId(null);
+        // Success toast
+        alert("Product deleted successfully");
+      },
+      onError: (error: ErrorSchema) => {
+        // Cek apakah error karena product memiliki orders
+        if (
+          error.response?.status === 409 ||
+          error.message?.includes("CANNOT_DELETE")
+        ) {
+          alert(
+            "Cannot delete product! This product has existing orders in history. " +
+              "Deleting it would corrupt order records.",
+          );
+        } else {
+          alert("Failed to delete product");
+        }
+      },
+    });
   };
 
-  const columns = [
+  const columns: Column<ProductWithCategory>[] = [
     {
       key: "image",
       label: "Product",
-      render: (image: string | null | undefined, item: Product) => (
+      render: (image, item) => (
         <div className="flex items-center gap-3">
           <div className="relative w-12 h-12 rounded-xl bg-slate-100 overflow-hidden shrink-0">
             {image ? (
-              <Image src={image} alt={item.title} fill unoptimized className="object-cover" />
+              <Image
+                src={image}
+                fill
+                alt={item.title}
+                className="object-cover"
+              />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-slate-200">
                 <Package className="w-6 h-6 text-slate-400" />
@@ -81,8 +76,12 @@ export default function ProductsPage() {
             )}
           </div>
           <div className="min-w-0">
-            <p className="font-bold text-slate-900 dark:text-white truncate max-w-[200px]">{item.title}</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">{item.category?.name ?? "Uncategorized"}</p>
+            <p className="font-bold text-slate-900 dark:text-white truncate max-w-50">
+              {item.title}
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+              {item.category?.name}
+            </p>
           </div>
         </div>
       ),
@@ -92,20 +91,27 @@ export default function ProductsPage() {
       label: "Price",
       sortable: true,
       render: (price: number) => (
-        <span className="font-bold text-slate-900 dark:text-white">IDR {price.toLocaleString()}</span>
+        <span className="font-bold text-slate-900 dark:text-white">
+          IDR {price.toLocaleString()}
+        </span>
       ),
     },
     {
       key: "variants",
       label: "Stock",
-      render: (variants: Product["variants"]) => {
+      render: (variants: VariantResponse[]) => {
         const totalStock = variants.reduce((acc, v) => acc + v.stock, 0);
         return (
           <div className="flex flex-col gap-1">
-            <span className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block w-fit ${
-              totalStock > 20 ? "bg-emerald-100 text-emerald-700" : 
-              totalStock > 0 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
-            }`}>
+            <span
+              className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block w-fit ${
+                totalStock > 20
+                  ? "bg-emerald-100 text-emerald-700"
+                  : totalStock > 0
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-red-100 text-red-700"
+              }`}
+            >
               {totalStock} in stock
             </span>
             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none">
@@ -116,19 +122,19 @@ export default function ProductsPage() {
       },
     },
     {
-        key: "id",
-        label: "Preview",
-        render: (id: string) => (
-          <Link 
-            href={`/product/${id}`} 
-            target="_blank"
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-500 uppercase tracking-widest px-3 py-1.5 bg-indigo-50 rounded-lg transition-colors group"
-          >
-            Storefront
-            <ExternalLink className="w-3 h-3 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-          </Link>
-        )
-    }
+      key: "id",
+      label: "Preview",
+      render: (id: string) => (
+        <Link
+          href={`/product/${id}`}
+          target="_blank"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-500 uppercase tracking-widest px-3 py-1.5 bg-indigo-50 rounded-lg transition-colors group"
+        >
+          Storefront
+          <ExternalLink className="w-3 h-3 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+        </Link>
+      ),
+    },
   ];
 
   return (
@@ -138,7 +144,9 @@ export default function ProductsPage() {
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white uppercase tracking-tight">
             Product Management
           </h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1 font-medium">Control your inventory and showcase your items.</p>
+          <p className="text-slate-500 dark:text-slate-400 mt-1 font-medium">
+            Control your inventory and showcase your items.
+          </p>
         </div>
         <Link
           href="/admin/products/new"
@@ -157,12 +165,6 @@ export default function ProductsPage() {
         onDelete={(item) => setDeleteId(item.id)}
         searchPlaceholder="Filter products by title, category..."
       />
-
-      {errorMessage && (
-        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {errorMessage}
-        </p>
-      )}
 
       <DeleteModal
         isOpen={!!deleteId}

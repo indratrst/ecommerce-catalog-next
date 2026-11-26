@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import prisma from "@/lib/prisma";
 import {
   Package,
   Tag,
@@ -6,38 +6,21 @@ import {
   ShoppingBag,
   ArrowUpRight,
   Plus,
+  BanknoteArrowUp,
 } from "lucide-react";
-import Link from "next/link";
-import { adminUserApi, categoryApi, productApi } from "@/lib/api";
-import { getSession } from "@/lib/auth";
 import Image from "next/image";
-import { AdminUser } from "@/types";
+import Link from "next/link";
 
 export default async function AdminDashboard() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("token")?.value;
-  const session = await getSession();
-
-  const [paginatedProducts, categories] = await Promise.all([
-    productApi.getAll({ limit: 5 }),
-    categoryApi.getAll(),
-  ]);
-  let users: AdminUser[] = [];
-  let usersError: string | null = null;
-  if (session?.role === "SUPERUSER") {
-    try {
-      users = await adminUserApi.getAll(token);
-    } catch (error) {
-      usersError = error instanceof Error ? error.message : "Gagal memuat data pengguna.";
-      console.error("Failed to load dashboard users:", error);
-    }
-  }
-  const recentProducts = paginatedProducts.data;
-  const productCount = paginatedProducts.totalData;
-
-  const categoryMap = new Map(
-    categories.map((c) => [String(c.id), c.name])
-  );
+  const productCount = await prisma.product.count();
+  const categoryCount = await prisma.category.count();
+  const userCount = await prisma.user.count();
+  const orderCount = await prisma.order.count();
+  const recentProducts = await prisma.product.findMany({
+    take: 5,
+    orderBy: { createdAt: "desc" },
+    include: { category: true },
+  });
 
   const stats = [
     {
@@ -49,27 +32,29 @@ export default async function AdminDashboard() {
     },
     {
       name: "Categories",
-      value: categories.length,
+      value: categoryCount,
       icon: Tag,
       color: "text-emerald-500",
       bg: "bg-emerald-500/10",
     },
-    ...(session?.role === "SUPERUSER" ? [{
+    {
       name: "Admin Users",
-      value: usersError ? "—" : users.length,
+      value: userCount,
       icon: Users,
       color: "text-indigo-500",
       bg: "bg-indigo-500/10",
-    }] : []),
+    },
+    {
+      name: "Total Orders",
+      value: orderCount,
+      icon: BanknoteArrowUp,
+      color: "text-amber-500",
+      bg: "bg-amber-500/10",
+    }
   ];
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      {usersError && (
-        <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Data pengguna tidak dapat dimuat dari API (`/users`): {usersError}. Pastikan Next.js terhubung ke server Go Fiber yang sudah menjalankan route admin terbaru.
-        </p>
-      )}
       <div>
         <h1 className="text-3xl font-bold text-slate-900 dark:text-white uppercase tracking-tight">
           Dashboard Overview
@@ -80,7 +65,7 @@ export default async function AdminDashboard() {
       </div>
 
       {/* Stats Grid */}
-      <div className={`grid grid-cols-1 ${stats.length === 2 ? "md:grid-cols-2" : "md:grid-cols-3"} gap-6`}>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {stats.map((stat) => (
           <div
             key={stat.name}
@@ -122,54 +107,39 @@ export default async function AdminDashboard() {
             </Link>
           </div>
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {recentProducts.length === 0 ? (
-              <div className="p-8 text-center text-sm text-slate-500">
-                Belum ada produk di database.
+            {recentProducts.map((product) => (
+              <div
+                key={product.id}
+                className="p-4 flex items-center gap-4 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors"
+              >
+                <div className="relative w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 overflow-hidden shrink-0">
+                  {product.image && (
+                    <Image
+                      src={product.image}
+                      alt={product.title}
+                      className="object-cover w-full h-full"
+                      fill
+                    />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                    {product.title}
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    {product.category.name}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-indigo-600">
+                    IDR {product.price.toLocaleString()}
+                  </p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase">
+                    New
+                  </p>
+                </div>
               </div>
-            ) : (
-              recentProducts.map((product) => {
-                const imgSrc = product.image ;
-                const categoryName =
-                  product.category?.name ||
-                  (product.categoryId ? categoryMap.get(product.categoryId) : null) ||
-                  "Uncategorized";
-
-                return (
-                  <div
-                    key={product.id}
-                    className="p-4 flex items-center gap-4 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors"
-                  >
-                    <div className="relative w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 overflow-hidden shrink-0">
-                      {imgSrc && (
-                        <Image
-                          src={imgSrc}
-                          alt={product.title}
-                          fill
-                          unoptimized
-                          className="object-cover"
-                        />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                        {product.title}
-                      </h4>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                        {categoryName}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-indigo-600">
-                        IDR {product.price.toLocaleString("id-ID")}
-                      </p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">
-                        New
-                      </p>
-                    </div>
-                  </div>
-                );
-              })
-            )}
+            ))}
           </div>
         </div>
 
@@ -181,7 +151,8 @@ export default async function AdminDashboard() {
                 Grow Your Catalog
               </h3>
               <p className="text-indigo-50/90 mb-6 text-sm italic font-medium">
-                Add new high-quality products to elevate your store&apos;s appeal.
+                Add new high-quality products to elevate your store&apos;s
+                appeal.
               </p>
               <Link
                 href="/admin/products/new"
@@ -211,7 +182,7 @@ export default async function AdminDashboard() {
                 </p>
               </div>
             </Link>
-            {session?.role === "SUPERUSER" && <Link
+            <Link
               href="/admin/users"
               className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm hover:border-indigo-500 transition-all flex flex-col gap-4"
             >
@@ -226,7 +197,7 @@ export default async function AdminDashboard() {
                   User Roles
                 </p>
               </div>
-            </Link>}
+            </Link>
           </div>
         </div>
       </div>

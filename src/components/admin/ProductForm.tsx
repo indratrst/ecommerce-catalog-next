@@ -1,91 +1,129 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useForm, useFieldArray, useWatch } from "react-hook-form";
+import { standardSchemaResolver } from "@hookform/resolvers/standard-schema";
 import { Loader2, Plus, ArrowLeft, Trash2, Box, Info } from "lucide-react";
 import Link from "next/link";
 import { ImageUpload } from "./ImageUpload";
-import { categoryApi } from "@/lib/api";
-import { Category, Product, ProductFormValues } from "@/types";
+import { CategoryResponse } from "@/lib/validation/category.schema";
+import type { FieldErrors } from "react-hook-form";
+import {
+  CreateProduct,
+  CreateProductSchema,
+  ProductVariant,
+} from "@/lib/validation/products.schema";
+import { useEffect } from "react";
+
+// ─── Props ───────────────────────────────────────────────────
 
 interface ProductFormProps {
-  initialData?: Product;
-  onSubmit: (data: ProductFormValues) => Promise<void>;
+  initialData?: {
+    title?: string;
+    price?: number;
+    originalPrice?: number | null; // MENAMBAHKAN: Handle tipe originalPrice
+    description?: string;
+    image?: string;
+    categoryId?: string | number;
+    variants?: ProductVariant[];
+  };
+  onSubmit: (data: CreateProduct) => Promise<void>;
   isLoading?: boolean;
+  categories?: CategoryResponse[];
 }
 
-export function ProductForm({ 
-  initialData, 
-  onSubmit, 
-  isLoading 
+export function ProductForm({
+  initialData,
+  onSubmit,
+  isLoading,
+  categories,
 }: ProductFormProps) {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [categoryError, setCategoryError] = useState("");
-  const [formData, setFormData] = useState<ProductFormValues>({
-    title: initialData?.title || "",
-    price: initialData?.price?.toString() || "",
-    description: initialData?.description || "",
-    image: initialData?.image || "",
-    categoryId: initialData?.categoryId || "",
-    variants: initialData?.variants?.map((variant) => ({
-      id: variant.id,
-      productId: variant.productId,
-      size: variant.size ?? "",
-      stock: variant.stock,
-      color: variant.color ?? "",
-      isActive: variant.isActive,
-    })) ?? [{ size: "One Size", stock: 0, color: "" }],
+  // ── React Hook Form ──────────────────────────────────────
+  const {
+    register,
+    handleSubmit,
+    control,
+    setValue,
+    formState: { errors },
+  } = useForm<CreateProduct>({
+    resolver: standardSchemaResolver(
+      CreateProductSchema,
+    ) as import("react-hook-form").Resolver<CreateProduct>,
+    defaultValues: {
+      title: initialData?.title || "",
+      originalPrice: initialData?.originalPrice || null, // MENAMBAHKAN: default value harga coret
+      price: initialData?.price || 0,
+      description: initialData?.description || "",
+      image: initialData?.image || "",
+      categoryId: String(initialData?.categoryId ?? ""),
+      variants: initialData?.variants
+        ?.filter((v: ProductVariant) => v.isActive)
+        .map((v: ProductVariant) => ({
+          id: v.id,
+          size: v.size,
+          stock: v.stock,
+          color: v.color || "",
+        })) || [{ size: "One Size", stock: 0, color: "" }],
+    },
   });
 
-  useEffect(() => {
-    async function fetchCategories() {
-      try {
-        const data = await categoryApi.getAll();
-        setCategories(data);
-        if (!formData.categoryId && data.length > 0) {
-          setFormData(prev => ({ ...prev, categoryId: String(data[0].id) }));
-        }
-      } catch (error) {
-        console.error("Failed to fetch categories:", error);
-        setCategoryError(error instanceof Error ? error.message : "Gagal memuat kategori.");
-      }
-    }
-    fetchCategories();
-  }, []);
+  const watchedImage = useWatch({ control, name: "image" });
+  const watchedVariants = useWatch({ control, name: "variants" });
+  const watchedCategoryId = useWatch({ control, name: "categoryId" });
 
+  // ── Fetch Categories ─────────────────────────────────────
+
+  useEffect(() => {
+    if (
+      categories &&
+      categories.length > 0 &&
+      !initialData &&
+      !watchedCategoryId
+    ) {
+      setValue("categoryId", String(categories[0].id));
+    }
+  }, [categories, initialData, setValue, watchedCategoryId]);
+
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: "variants",
+  });
+
+  if (!categories && !initialData) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+      </div>
+    );
+  }
+
+  // ── Variant Helpers ──────────────────────────────────────
   const addVariant = () => {
-    setFormData(prev => ({
-      ...prev,
-      variants: [...prev.variants, { size: "", stock: 0, color: "", isActive: true }]
-    }));
+    append({ size: "", stock: 0, color: "" });
   };
 
   const removeVariant = (index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      variants: prev.variants.filter((_, i) => i !== index)
-    }));
+    const current = watchedVariants[index];
+    if (current?.id) {
+      setValue(`variants.${index}.isDeleted`, true);
+    } else {
+      remove(index);
+    }
   };
 
-  const updateVariant = (index: number, field: keyof ProductFormValues["variants"][number], value: string | number | boolean | null) => {
-    const newVariants = [...formData.variants];
-    newVariants[index] = { ...newVariants[index], [field]: value };
-    setFormData({ ...formData, variants: newVariants });
+  const visibleCount = watchedVariants.filter((v) => !v.isDeleted).length;
+
+  const onFormSubmit = (data: CreateProduct) => {
+    onSubmit(data);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await onSubmit(formData);
+  const onFormError = (errors: FieldErrors<CreateProduct>) => {
+    console.log("❌ Validation errors:", errors);
   };
 
   return (
     <div className="max-w-5xl mx-auto pb-20">
-      {categoryError && (
-        <p role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {categoryError}
-        </p>
-      )}
       <div className="flex items-center gap-4 mb-8">
-        <Link 
+        <Link
           href="/admin/products"
           className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
         >
@@ -96,78 +134,141 @@ export function ProductForm({
         </h2>
       </div>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main Info */}
+      <form
+        onSubmit={handleSubmit(onFormSubmit, onFormError)}
+        className="grid grid-cols-1 lg:grid-cols-3 gap-8"
+      >
+        {/* ═══ Main Info ═══ */}
         <div className="lg:col-span-2 space-y-8">
           <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
             <h3 className="text-lg font-bold flex items-center gap-2 text-indigo-600">
               <Info className="w-5 h-5" />
               General Information
             </h3>
-            
+
+            {/* Title */}
             <div className="space-y-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
                 Product Title
               </label>
               <input
-                required
+                {...register("title")}
                 placeholder="e.g. Classic Logo T-Shirt"
-                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
-                value={formData.title ?? ""}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all ${
+                  errors.title
+                    ? "border-red-500 focus:ring-red-500"
+                    : "border-slate-200 dark:border-slate-700"
+                }`}
               />
+              {errors.title && (
+                <p className="text-xs text-red-500">{errors.title.message}</p>
+              )}
             </div>
 
+            {/* MODIFIKASI: Section Harga Jual vs Harga Coret (Diskon) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
-                  Price (IDR)
+                  Selling Price (IDR)
                 </label>
                 <input
-                  required
+                  {...register("price", { valueAsNumber: true })}
                   type="number"
                   placeholder="0"
-                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
-                  value={formData.price ?? ""}
-                  onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                  className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all ${
+                    errors.price
+                      ? "border-red-500 focus:ring-red-500"
+                      : "border-slate-200 dark:border-slate-700"
+                  }`}
                 />
+                {errors.price && (
+                  <p className="text-xs text-red-500">{errors.price.message}</p>
+                )}
               </div>
 
+              {/* MENAMBAHKAN: Input Field untuk Original Price (Harga Coret) */}
               <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
-                  Category
-                </label>
-                <select
-                  required
-                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all appearance-none"
-                  value={formData.categoryId ?? ""}
-                  onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
-                >
-                  {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex justify-between items-center">
+                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
+                    Original Price / Strike Price (IDR)
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-medium lowercase italic">
+                    Opsional
+                  </span>
+                </div>
+                <input
+                  {...register("originalPrice", { valueAsNumber: true })}
+                  type="number"
+                  placeholder="e.g. 150000 (Biarkan kosong jika tidak diskon)"
+                  className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all ${
+                    errors.originalPrice
+                      ? "border-red-500 focus:ring-red-500"
+                      : "border-slate-200 dark:border-slate-700"
+                  }`}
+                />
+                {errors.originalPrice && (
+                  <p className="text-xs text-red-500">
+                    {errors.originalPrice.message}
+                  </p>
+                )}
               </div>
             </div>
 
+            {/* MODIFIKASI: Dropdown Kategori dipindah ke bawah baris harga */}
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
+                Category
+              </label>
+              <select
+                {...register("categoryId")}
+                value={watchedCategoryId || ""}
+                onChange={(e) => setValue("categoryId", e.target.value)}
+                className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all appearance-none ${
+                  errors.categoryId
+                    ? "border-red-500 focus:ring-red-500"
+                    : "border-slate-200 dark:border-slate-700"
+                }`}
+              >
+                <option value="" disabled>
+                  {!categories ? "Loading categories..." : "Select a category"}
+                </option>
+                {categories?.map((cat) => (
+                  <option key={cat.id} value={String(cat.id)}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+              {errors.categoryId && (
+                <p className="text-xs text-red-500">
+                  {errors.categoryId.message}
+                </p>
+              )}
+            </div>
+
+            {/* Description */}
             <div className="space-y-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
                 Description
               </label>
               <textarea
-                required
+                {...register("description")}
                 rows={6}
                 placeholder="Product details and specifications..."
-                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all resize-none"
-                value={formData.description ?? ""}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border rounded-xl text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all resize-none ${
+                  errors.description
+                    ? "border-red-500 focus:ring-red-500"
+                    : "border-slate-200 dark:border-slate-700"
+                }`}
               />
+              {errors.description && (
+                <p className="text-xs text-red-500">
+                  {errors.description.message}
+                </p>
+              )}
             </div>
           </div>
 
-          {/* Variants */}
+          {/* ═══ Variants ═══ */}
           <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold flex items-center gap-2 text-indigo-600">
@@ -184,66 +285,117 @@ export function ProductForm({
               </button>
             </div>
 
+            {errors.variants?.root && (
+              <p className="text-xs text-red-500">
+                {errors.variants.root.message}
+              </p>
+            )}
+
             <div className="space-y-4">
-              {formData.variants.map((v, index) => (
-                <div key={index} className="grid grid-cols-1 sm:grid-cols-4 gap-4 p-4 rounded-xl border border-slate-100 dark:border-slate-800 relative group">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Size</label>
+              {fields.map((field, index) => {
+                if (watchedVariants[index]?.isDeleted) return null;
+
+                return (
+                  <div
+                    key={field.id}
+                    className="grid grid-cols-1 sm:grid-cols-4 gap-4 p-4 rounded-xl border border-slate-100 dark:border-slate-800 relative group"
+                  >
                     <input
-                      placeholder="e.g. M"
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
-                      value={v.size ?? ""}
-                      onChange={(e) => updateVariant(index, "size", e.target.value)}
+                      type="hidden"
+                      {...register(`variants.${index}.id`)}
                     />
+
+                    {/* Size */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        Size
+                      </label>
+                      <input
+                        {...register(`variants.${index}.size`)}
+                        placeholder="e.g. M"
+                        className={`w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-lg text-xs dark:text-white ${
+                          errors.variants?.[index]?.size
+                            ? "border-red-500"
+                            : "border-slate-200 dark:border-slate-700"
+                        }`}
+                      />
+                      {errors.variants?.[index]?.size && (
+                        <p className="text-[10px] text-red-500">
+                          {errors.variants[index].size.message}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Color */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        Color
+                      </label>
+                      <input
+                        {...register(`variants.${index}.color`)}
+                        placeholder="Optional"
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white"
+                      />
+                    </div>
+
+                    {/* Stock */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        Stock
+                      </label>
+                      <input
+                        {...register(`variants.${index}.stock`, {
+                          valueAsNumber: true,
+                        })}
+                        type="number"
+                        placeholder="0"
+                        className={`w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-lg text-xs dark:text-white ${
+                          errors.variants?.[index]?.stock
+                            ? "border-red-500"
+                            : "border-slate-200 dark:border-slate-700"
+                        }`}
+                      />
+                      {errors.variants?.[index]?.stock && (
+                        <p className="text-[10px] text-red-500">
+                          {errors.variants[index].stock.message}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Delete button */}
+                    <div className="flex items-end justify-end">
+                      {visibleCount > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeVariant(index)}
+                          className="p-2 text-slate-300 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/10 transition-all opacity-0 group-hover:opacity-100"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Color</label>
-                    <input
-                      placeholder="Optional"
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
-                      value={v.color ?? ""}
-                      onChange={(e) => updateVariant(index, "color", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Stock</label>
-                    <input
-                      type="number"
-                      placeholder="0"
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
-                      value={v.stock ?? 0}
-                      onChange={(e) => updateVariant(index, "stock", e.target.value)}
-                    />
-                  </div>
-                  <div className="flex items-end justify-end">
-                    {formData.variants.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeVariant(index)}
-                        className="p-2 text-slate-300 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/10 transition-all opacity-0 group-hover:opacity-100"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
 
-        {/* Sidebar / Media */}
+        {/* ═══ Sidebar / Media ═══ */}
         <div className="space-y-8">
           <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-            <ImageUpload 
-              value={formData.image ?? ""} 
-              onChange={(url) => setFormData({ ...formData, image: url })} 
+            <ImageUpload
+              value={watchedImage ?? ""}
+              label="Product Image"
+              onChange={(url) => setValue("image", url)}
             />
           </div>
 
           <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6 sticky top-24">
             <div className="space-y-4">
-              <h4 className="text-sm font-bold uppercase text-slate-400 tracking-widest">Actions</h4>
+              <h4 className="text-sm font-bold uppercase text-slate-400 tracking-widest">
+                Actions
+              </h4>
               <button
                 type="submit"
                 disabled={isLoading}
@@ -252,12 +404,10 @@ export function ProductForm({
                 {isLoading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
-                  <>
-                    {initialData ? "Update Product" : "Publish Product"}
-                  </>
+                  <>{initialData ? "Update Product" : "Publish Product"}</>
                 )}
               </button>
-              
+
               <Link
                 href="/admin/products"
                 className="w-full py-4 flex items-center justify-center text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
