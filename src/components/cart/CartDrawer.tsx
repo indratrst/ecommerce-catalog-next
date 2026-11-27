@@ -5,6 +5,7 @@ import { X, Plus, Minus, Trash2, ShoppingBag, PlusCircle } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Product } from "@/types";
+import Image from "next/image";
 
 export function CartDrawer() {
   const {
@@ -112,7 +113,7 @@ export function CartDrawer() {
                 <li key={item.variant?.id ?? item.product.id} className="flex gap-4 border-b pb-6" style={{ borderColor: "var(--surface-border)" }}>
                   <div className="h-24 w-20 shrink-0 overflow-hidden" style={{ background: "var(--surface)" }}>
                     {item.product.image ? (
-                      <img
+                      <Image
                         src={item.product.image}
                         alt={item.product.title}
                         className="h-full w-full object-cover"
@@ -183,7 +184,7 @@ export function CartDrawer() {
             </h3>
             <div className="flex overflow-x-auto gap-4 pb-4 snap-x">
               {recommendedProducts.map((product) => (
-                <div key={product.id} className="min-w-[140px] snap-start flex flex-col group gap-2">
+                <div key={product.id} className="min-w-35 snap-start flex flex-col group gap-2">
                   <Link href={`/product/${product.id}`} className="block relative aspect-3/4 overflow-hidden" onClick={() => setIsCartOpen(false)}>
                     <img
                       src={product.image ?? undefined}

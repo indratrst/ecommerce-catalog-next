@@ -1,0 +1,25 @@
+# Dependencies & pnpm lockfile (penyumbang terbesar pemborosan token di Next.js)
+node_modules/
+pnpm-lock.yaml
+.pnpm-store/
+
+# Next.js build & cache output
+.next/
+out/
+build/
+.vercel/
+*.tsbuildinfo
+
+# Legacy files (jika masih ada sisa file lama agar tidak terbaca AI)
+prisma/
+*.sqlite
+*.db
+
+# Environment, media assets & logs
+.env
+.env.*
+public/images/
+public/uploads/
+*.log
+.DS_Store
+.vscode/
